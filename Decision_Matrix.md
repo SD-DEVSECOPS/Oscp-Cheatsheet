@@ -221,3 +221,8 @@ If you are stuck for more than 30 minutes, always check:
 | **GenericAll** on Computer | Exploit RBCD | `impacket-addcomputer` + `bloodyAD add rbcd` |
 | **Inter-Domain krbtgt** Ticket | DCSync parent from child | `Mimikatz` tickets export -> `Impacket-secretsdump -k` |
 | **SeImpersonate** Enabled | Potato-style LPE | `GodPotato`, `PrintSpoofer` |
+| **CloudSync Logic** | Abuse S3 (PUT) -> Sync Trigger | Two-stage web shell (Indir + Yürüt) |
+| **_SC_SNMPTRAP** Secret | Harvesting LSA Secrets | `impacket-secretsdump` -> Service Creds |
+| **GenericWrite (Laser)** | Set SPN -> Kerberoast | `bloodyAD set object ... servicePrincipalName` + `GetUserSPNs` |
+| **PCAP Found (Lateral)** | Traffic analysis for creds | `wireshark` -> `http.request.method == "POST"` |
+| **Writable Share + No Signing** | NTLM Relay Attack | `ntlm_theft` + `Responder` + `ntlmrelayx` |
