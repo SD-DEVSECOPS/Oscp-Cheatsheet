@@ -81,8 +81,9 @@ Always try multiple scan speeds and script combinations.
     ```
 - **SNMP Enumeration (UDP 161)**:
   - *Scan*: `nmap -sU --top-ports 100 [IP]`
-  - *Check*: `snmp-check [IP] -c public`
-  - *Walk*: `snmpwalk -v2c -c public [IP]`
+  - *Standard Walk*: `snmpwalk -v 2c -c public [IP]`
+  - *Check (Detailed)*: `snmp-check [IP] -c public`
+  - *Deep Dive*: See Section 4 (SNMP Command Cheatsheet) for custom script and credential extraction.
 
 - **Extension Brute Force**:
   ```bash
@@ -199,13 +200,34 @@ Try null sessions and guest accounts first.
   netexec ldap 10.10.10.10 -u user -p password -M get-desc-users
   ```
 
-- **SNMP Enumeration (UDP 161)**:
-  ```bash
-  nmap -sU --top-ports 100 --min-rate 5000 [IP]
-  snmp-check [IP] -c public
-  snmpwalk -v2c -c public [IP]
-  onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt [IP]
-  ```
+### SNMP Command Cheatsheet
+Comprehensive commands for deep SNMP enumeration and logic-based exploitation.
+
+| Information Detail | Command (Using Name) | Command (Using OID / If Name Fails) |
+| :--- | :--- | :--- |
+| **Custom Scripts** | `snmpwalk -v 2c -c public [IP] NET-SNMP-EXTEND-MIB::nsExtendObjects` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.4.1.8072.1.3` |
+| **System Info** | `snmpwalk -v 2c -c public [IP] SNMPv2-MIB::sysDescr` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.1.1` |
+| **Running Procs** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrSWRunName` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.4.2.1.2` |
+| **Proc Arguments** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrSWRunParameters` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.4.2.1.5` |
+| **Installed Apps** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrSWInstalledName` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.6.3.1.2` |
+| **User Accounts** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrSWRunPath` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.4.2.1.4` |
+| **Disk Storage** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrStorageDescr` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.2.3.1.3` |
+| **TCP Ports** | `snmpwalk -v 2c -c public [IP] TCP-MIB::tcpConnState` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.6.13.1.1` |
+| **Network Interfaces** | `snmpwalk -v 2c -c public [IP] IF-MIB::ifDescr` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.2.2.1.2` |
+
+**Common Community Strings (The "Usual Suspects"):**
+If `public` fails, try these immediately:
+- `private` (Often Read-Write)
+- `manager`, `admin`, `internal`, `monitor`, `secret`, `root`
+- `snmp`, `read`, `write`, `cisco`, `agent`
+
+**Discovery Tooling:**
+```bash
+# Brute force community strings
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt [IP]
+# Automated enumeration
+snmp-check [IP] -c [COMMUNITY]
+```
 
 ---
 
